@@ -14,17 +14,24 @@ namespace Scenes.script
         {
             try
             {
-                laser = gameObject.AddComponent<LineRenderer>();
+                laser = GetComponent<LineRenderer>();
+                if (laser == null)
+                    laser = gameObject.AddComponent<LineRenderer>();
+
                 if (laser != null)
                 {
+                    laser.positionCount = 2;
                     laser.startWidth = 0.01f;
                     laser.endWidth = 0.01f;
 
-                    Shader shader = Shader.Find("Sprites/Default");
-                    if (shader == null)
-                        shader = Shader.Find("Standard");
-
-                    laser.material = new Material(shader);
+                    Shader shader = Shader.Find("Sprites/Default")
+                        ?? Shader.Find("Standard")
+                        ?? Shader.Find("Unlit/Color")
+                        ?? Shader.Find("Universal Render Pipeline/Unlit");
+                    if (shader != null)
+                    {
+                        laser.material = new Material(shader);
+                    }
                     laser.startColor = Color.green;
                     laser.endColor = Color.red;
 
@@ -32,12 +39,13 @@ namespace Scenes.script
                 }
                 else
                 {
-                    Debug.LogError("Failed to create LineRenderer component");
+                    Debug.LogWarning("WorkingController: LineRenderer not available on this object; laser disabled.");
                 }
             }
             catch (System.Exception e)
             {
-                Debug.LogError("Error creating laser: " + e.Message);
+                laser = null;
+                Debug.LogWarning("WorkingController: Could not create laser: " + e.Message);
             }
         }
 
@@ -146,7 +154,7 @@ namespace Scenes.script
                 //         Debug.Log((isLeftController ? "Left" : "Right") + " TRIGGER VALUE: " + triggerValue);
                 //     }
                 // }
-               
+
                 if (device.TryGetFeatureValue(CommonUsages.primaryButton, out bool primary) && primary)
                 {
                     Debug.Log((isLeftController ? "Left" : "Right") + " PRIMARY BUTTON!");
@@ -161,34 +169,34 @@ namespace Scenes.script
         void ShootRaycast()
         {
             Vector3 origin = transform.position;
-            Vector3 dir = transform.forward; 
+            Vector3 dir = transform.forward;
             float maxDist = 50f;
 
             Debug.DrawRay(origin, dir * maxDist, Color.red, 1f);
             Debug.Log($"[Ray] origin={origin}, forward={dir}, maxDist={maxDist}");
 
             RaycastHit[] hits = Physics.RaycastAll(origin, dir, maxDist, ~0, QueryTriggerInteraction.Collide);
-            
+
             if (hits.Length == 0)
             {
                 Debug.Log("RaycastAll: no hits");
                 return;
             }
-            
+
             List<RaycastHit> validHits = new List<RaycastHit>();
             for (int i = 0; i < hits.Length; i++)
             {
                 var h = hits[i];
                 var go = h.collider.gameObject;
-                
-                if (go.name.Contains("Controller") || go.name.Contains("Hand")) 
+
+                if (go.name.Contains("Controller") || go.name.Contains("Hand"))
                 {
                     continue;
                 }
-                
+
                 Debug.Log($"hit[{i}] name={go.name}, dist={h.distance}, hitPoint={h.point}, layer={LayerMask.LayerToName(go.layer)}, isTrigger={h.collider.isTrigger}");
                 Debug.Log($"   transform.pos={go.transform.position}, transform.parent={(go.transform.parent ? go.transform.parent.name : "null")}");
-                
+
                 validHits.Add(h);
 
                 GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -220,9 +228,9 @@ namespace Scenes.script
                 if (mainPanel != null)
                 {
                     string subpanelPath = subPanel.GetFolderPath();
-                    string subDisplayPath = subPanel.GetDisplayPath();   
+                    string subDisplayPath = subPanel.GetDisplayPath();
                     Debug.Log($"Subpanel path: '{subpanelPath}', Main panel current path: '{mainPanel.folderPath}'");
-                    
+
                     if (!mainPanel.hasChild)
                     {
                         mainPanel.folderPath = subpanelPath;

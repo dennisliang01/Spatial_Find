@@ -5,56 +5,58 @@ namespace Scenes.script
 {
     public class MeshController : MonoBehaviour
     {
-        [Header("Plane Settings")] 
+        [Header("Plane Settings")]
         public GameObject planePrefab;
         public float offsetDistance = 3f;
         public Vector3 scaleReduction = new Vector3(0.8f, 1f, 0.8f);
-        
+
         [Header("Data Settings")]
         public string relativePath; //passed from selected subpanel
         public string relDisplayPath;
         private string myPath;
-        private string myDisplayPath;  
+        private string myDisplayPath;
         public bool isLeafNode = false;
-        public bool isBasePlane= false;
-        public string folderPath; 
-        public string displayPath; 
+        public bool isBasePlane = false;
+        public string folderPath;
+        public string displayPath;
 
         [Header("Subpanel Settings")]
         public Vector3 spawnDirection = Vector3.down;
         public GameObject currentChildPlane;
         public bool hasChild = false;
 
-         [Header("Label Settings")]
-        public GameObject textLabelPrefab; 
+        [Header("Label Settings")]
+        public GameObject textLabelPrefab;
         public float labelHeight = -0.008f;
         public float labelz = 0.07f;
 
         void Start()
-        {   
-            if (isBasePlane) {
+        {
+            if (isBasePlane)
+            {
                 folderPath = Path.Combine(Application.streamingAssetsPath, relativePath);
                 displayPath = Path.Combine(Application.streamingAssetsPath, relDisplayPath);
-                };
+            }
+            ;
             myDisplayPath = displayPath;
-            myPath = folderPath; 
+            myPath = folderPath;
             SetupPlaneVisuals();
-            
+
         }
 
-        
+
 
         //data loading setup 
         void SetupPlaneVisuals()
         {
-            
+
             Debug.Log("=== PATH DEBUG INFO ===");
             Debug.Log($"Raw folderPath: '{folderPath}'");
 
             if (IsLeafNode())
             {
                 //SetupAsImagePlane();
-                
+
             }
             else
             {
@@ -66,12 +68,14 @@ namespace Scenes.script
 
         bool IsEmptyFolder()
         {
-            if (string.IsNullOrEmpty(folderPath)) {
-            Debug.LogWarning("Current folder path is null or empty");
-            return false;}
+            if (string.IsNullOrEmpty(folderPath))
+            {
+                Debug.LogWarning("Current folder path is null or empty");
+                return false;
+            }
             if (IsFilePath(folderPath))
             {
-                return false; 
+                return false;
             }
             bool hasNoSubfolders = Directory.GetDirectories(folderPath).Length == 0;
             bool hasImageFiles = Directory.GetFiles(folderPath, "*.jpg").Length > 0;
@@ -81,30 +85,32 @@ namespace Scenes.script
         //deal with folders with no child 
         bool IsLeafNode()
         {
-            if (string.IsNullOrEmpty(folderPath)) {
+            if (string.IsNullOrEmpty(folderPath))
+            {
                 Debug.LogWarning("Folder path is null or empty");
-                return false;}
+                return false;
+            }
 
-             if (IsFilePath(folderPath))
+            if (IsFilePath(folderPath))
             {
                 Debug.Log($"Path is a file, treating as leaf node: {folderPath}");
                 return true;
             }
-            
-            
+
+
             bool hasNoSubfolders = Directory.GetDirectories(folderPath).Length == 0;
             bool hasImageFiles = Directory.GetFiles(folderPath, "*.jpg").Length > 0;
             isLeafNode = hasNoSubfolders && hasImageFiles;
             return isLeafNode;
-        
+
         }
 
         bool IsFilePath(string path)
         {
             if (string.IsNullOrEmpty(path)) return false;
-            
+
             string extension = Path.GetExtension(path).ToLower();
-            return !string.IsNullOrEmpty(extension) && 
+            return !string.IsNullOrEmpty(extension) &&
                 (extension == ".jpg" || extension == ".jpeg" || extension == ".png");
         }
 
@@ -116,7 +122,7 @@ namespace Scenes.script
         }
 
         //this deal with the last level (image level)
-         void SetupAsImagePlane()
+        void SetupAsImagePlane()
         {
             if (!string.IsNullOrEmpty(folderPath))
             {
@@ -172,14 +178,14 @@ namespace Scenes.script
 
 
             currentChildPlane.transform.localScale = requiredLocalScale;
-            
+
             //passing in the data path to spawned child
             Debug.Log($" Passing '{folderPath}' to the spawned child");
             MeshController childController = currentChildPlane.GetComponent<MeshController>();
             if (childController != null)
             {
-                childController.folderPath = this.folderPath; 
-                childController.displayPath = this.displayPath; 
+                childController.folderPath = this.folderPath;
+                childController.displayPath = this.displayPath;
                 Debug.Log($"Passed folder path to child: {folderPath}");
                 Debug.Log($"Passed display path to child: {displayPath}");
             }
@@ -191,14 +197,14 @@ namespace Scenes.script
             }
 
             hasChild = true;
-            Debug.Log("Spawned child plane with path: " + folderPath +  " display: " + displayPath);
+            Debug.Log("Spawned child plane with path: " + folderPath + " display: " + displayPath);
         }
-        
+
         Vector3 CalculateChainPosition()
         {
             Vector3 direction = transform.TransformDirection(spawnDirection);
             int planeDepth = CountPlanesInChain();
-            
+
             Debug.Log($"Calculating spawn position:");
             Debug.Log($"- Direction: {direction}");
             Debug.Log($"- Plane depth in chain: {planeDepth}");
@@ -222,16 +228,16 @@ namespace Scenes.script
             if (currentChildPlane != null)
             {
                 Renderer childRenderer = currentChildPlane.GetComponent<Renderer>();
-                
+
                 if (parentRenderer != null && childRenderer != null)
                 {
                     float parentHeight = parentRenderer.bounds.size.y;
                     float childHeight = childRenderer.bounds.size.y;
-                    
+
                     return (childHeight - parentHeight) / 3f;
                 }
             }
-            
+
             return 0f;
         }
 
@@ -257,8 +263,8 @@ namespace Scenes.script
                 Destroy(currentChildPlane);
                 hasChild = false;
                 Debug.Log("Removed child plane");
-                folderPath = myPath; 
-                displayPath =myDisplayPath; 
+                folderPath = myPath;
+                displayPath = myDisplayPath;
 
             }
         }
@@ -285,7 +291,7 @@ namespace Scenes.script
             if (!string.IsNullOrEmpty(folderPath))
             {
                 folderName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                if (string.IsNullOrEmpty(folderName)) folderName = folderPath; 
+                if (string.IsNullOrEmpty(folderName)) folderName = folderPath;
             }
 
             Transform existing = transform.Find($"{gameObject.name}_FolderLabel");
@@ -295,8 +301,8 @@ namespace Scenes.script
             spawnedLabel.name = $"{gameObject.name}_FolderLabel";
             spawnedLabel.transform.SetParent(transform, false);
 
-           
-            
+
+
             spawnedLabel.transform.localPosition = new Vector3(-0.06f, labelHeight, labelz);
 
             spawnedLabel.transform.localRotation = Quaternion.Euler(-90f, 0f, 180f);
@@ -310,7 +316,7 @@ namespace Scenes.script
                 float uniform = Mathf.Max(bounds.x, bounds.y);
                 baseScale = new Vector3(uniform, uniform, uniform);
             }
-            float localLabelScale = 0.0003f;            
+            float localLabelScale = 0.0003f;
             spawnedLabel.transform.localScale = baseScale * localLabelScale;
 
             // Find TMP inside the prefab
@@ -323,7 +329,7 @@ namespace Scenes.script
 
             tmp.text = folderName;
             tmp.color = Color.white;
-            tmp.fontSize = 10; 
+            tmp.fontSize = 10;
             tmp.alignment = TMPro.TextAlignmentOptions.Center;
 
             tmp.ForceMeshUpdate();

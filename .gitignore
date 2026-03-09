@@ -105,3 +105,6 @@ InitTestScene*.unity*
 # Bezi
 Packages/com.bezi.sidekick/
 .bezisidekick/
+
+# Unity package samples (do not upload)
+/[Aa]ssets/[Ss]amples/
