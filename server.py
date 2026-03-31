@@ -1,405 +1,442 @@
 """
-AI-powered image retrieval POC — FastAPI backend for Unity.
+CLIP + FAISS image retrieval server — FastAPI backend for Unity VR.
 
 Setup
 -----
-1. Python 3.11+ recommended.
+1. Python 3.10+ recommended.
 
 2. Install dependencies:
-       pip install fastapi uvicorn ollama
+       pip install git+https://github.com/openai/CLIP.git faiss-gpu numpy fastapi uvicorn
+   (torch and torchvision are pulled in automatically by CLIP.)
+   If you don't have a CUDA GPU, replace faiss-gpu with faiss-cpu.
 
-3. Install Ollama from https://ollama.com and start it locally (default http://localhost:11434).
+3. Prepare the dataset (50 curated ImageNet-1K classes, ~50 000 images):
+       python download_imagenet50.py
+   Images go into  assets/StreamingAssets/collague_images/{classname}/{file}.JPEG
 
-4. Pull the chat model:
-       ollama pull mistral
-
-5. Place image files under:
-       <repo>/assets/StreamingAssets/collage_images
-   (Resolved relative to server.py, not the shell cwd.)
-   Folder name = category; filename stem split on underscores = tags.
-
-6. Run the server (listens on 0.0.0.0:8000) from any directory:
-       python /path/to/server.py
+4. Run the server (listens on 0.0.0.0:8000):
        python server.py
-   Open http://127.0.0.1:8000/ for a barebones UI (quick search + 4-level refine).
-   API: POST /search, POST /search/refine (stateless refinement), GET /images/…, GET /health.
 
-7. Export processed metadata (same records as in-memory index) to JSON:
-       python server.py export-dataset
-       python server.py export-dataset -o path/to/out.json
+   First startup embeds all images with CLIP ViT-B/32 and caches the result to
+   clip_index.npy + clip_paths.json (5-10 min on GPU).
+   Subsequent startups load from cache in under 10 seconds.
+
+5. Open http://127.0.0.1:8000/ for a browser-based POC UI.
+   API: POST /search, GET /images/…, GET /health.
 """
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import logging
-import re
 import time
 from pathlib import Path
 from typing import Any
 
-import ollama
-from ollama import ResponseError
+import clip
+import faiss
+import numpy as np
+import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel, Field, model_validator
+from PIL import Image
+from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Resolve dataset relative to this file so indexing works even if cwd is not the repo root.
 _SERVER_DIR = Path(__file__).resolve().parent
-IMAGE_ROOT = _SERVER_DIR / "assets" / "StreamingAssets" / "collage_images"
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-OLLAMA_MODEL = "mistral"
-OLLAMA_TIMEOUT_SEC = 30.0
+IMAGE_ROOT = _SERVER_DIR / "assets" / "StreamingAssets" / "collague_images"
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
-# Default result counts per refinement level (1..4). Client may override via top_n.
-LEVEL_TOP_N: tuple[int, int, int, int] = (90, 30, 10, 1)
+CACHE_EMBEDDINGS = _SERVER_DIR / "clip_index.npy"
+CACHE_PATHS = _SERVER_DIR / "clip_paths.json"
 
-_SYSTEM_PROMPT = """You are a ranking assistant for image retrieval.
-You MUST respond with ONLY a valid JSON array of strings — image IDs in order from most relevant to least relevant for the user's query.
-Every ID in your array MUST appear exactly as given in the candidate list. Do not invent IDs, do not rename them, do not add commentary.
-If multiple candidates tie, preserve a stable order. Output nothing before or after the JSON array."""
+STAGE_SIZES = [90, 30, 10, 1]
+CLIP_MODEL_NAME = "ViT-B/32"
+EMBED_BATCH_SIZE = 256
+
+# ---------------------------------------------------------------------------
+# Module-level state (populated at startup)
+# ---------------------------------------------------------------------------
+DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+CLIP_MODEL: Any = None
+CLIP_PREPROCESS: Any = None
+EMBEDDINGS: np.ndarray = np.empty((0, 512), dtype=np.float32)
+IMAGE_RECORDS: list[dict[str, str]] = []
+RECORD_BY_ID: dict[str, int] = {}  # id -> index into IMAGE_RECORDS / EMBEDDINGS
+FAISS_INDEX: faiss.IndexFlatIP | None = None
+INDEX_BUILT: bool = False
 
 
+# ---------------------------------------------------------------------------
+# Softmax helper
+# ---------------------------------------------------------------------------
+def rank_by_softmax(
+    scores: np.ndarray, temperature: float = 0.07
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (sorted_indices, probabilities) in descending probability order.
+
+    Probabilities sum to 1.0.
+    """
+    logits = scores / temperature
+    logits -= logits.max()  # numerical stability
+    exp = np.exp(logits)
+    probs = exp / exp.sum()
+    order = np.argsort(-probs)
+    return order, probs[order]
+
+
+# ---------------------------------------------------------------------------
+# Startup: build or load CLIP index
+# ---------------------------------------------------------------------------
+def _walk_images() -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    if not IMAGE_ROOT.is_dir():
+        logger.warning("IMAGE_ROOT missing: %s", IMAGE_ROOT.resolve())
+        return records
+    root = IMAGE_ROOT.resolve()
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
+            rel = p.relative_to(root)
+            category = rel.parent.name if rel.parent != Path(".") else ""
+            stem = rel.stem
+            rec_id = f"{category}/{stem}" if category else stem
+            records.append(
+                {"id": rec_id, "path": rel.as_posix(), "category": category}
+            )
+    return records
+
+
+def _embed_images(records: list[dict[str, str]]) -> np.ndarray:
+    """Embed all images with CLIP in batches.  Returns L2-normalised (N, 512)."""
+    root = IMAGE_ROOT.resolve()
+    all_embeddings: list[np.ndarray] = []
+    n = len(records)
+
+    for start in range(0, n, EMBED_BATCH_SIZE):
+        batch_records = records[start : start + EMBED_BATCH_SIZE]
+        images = []
+        for rec in batch_records:
+            img = Image.open(root / rec["path"]).convert("RGB")
+            images.append(CLIP_PREPROCESS(img))
+        image_input = torch.stack(images).to(DEVICE)
+        with torch.no_grad():
+            feats = CLIP_MODEL.encode_image(image_input)
+        feats = feats.cpu().numpy().astype(np.float32)
+        all_embeddings.append(feats)
+        if (start // EMBED_BATCH_SIZE) % 20 == 0:
+            logger.info("Embedded %d / %d images", min(start + EMBED_BATCH_SIZE, n), n)
+
+    emb = np.vstack(all_embeddings)
+    norms = np.linalg.norm(emb, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    emb /= norms
+    return emb
+
+
+def build_index() -> None:
+    global EMBEDDINGS, IMAGE_RECORDS, RECORD_BY_ID, FAISS_INDEX, INDEX_BUILT
+    global CLIP_MODEL, CLIP_PREPROCESS
+
+    t0 = time.perf_counter()
+    logger.info("Loading CLIP model %s on %s ...", CLIP_MODEL_NAME, DEVICE)
+    CLIP_MODEL, CLIP_PREPROCESS = clip.load(CLIP_MODEL_NAME, device=DEVICE)
+
+    if CACHE_EMBEDDINGS.exists() and CACHE_PATHS.exists():
+        logger.info("Loading cached index from %s", CACHE_EMBEDDINGS)
+        EMBEDDINGS = np.load(str(CACHE_EMBEDDINGS)).astype(np.float32)
+        with open(CACHE_PATHS, "r", encoding="utf-8") as f:
+            IMAGE_RECORDS = json.load(f)
+    else:
+        logger.info("Walking %s for images...", IMAGE_ROOT.resolve())
+        IMAGE_RECORDS = _walk_images()
+        if not IMAGE_RECORDS:
+            logger.warning("No images found — index will be empty")
+            EMBEDDINGS = np.empty((0, 512), dtype=np.float32)
+        else:
+            logger.info("Embedding %d images (batch_size=%d)...", len(IMAGE_RECORDS), EMBED_BATCH_SIZE)
+            EMBEDDINGS = _embed_images(IMAGE_RECORDS)
+            np.save(str(CACHE_EMBEDDINGS), EMBEDDINGS)
+            with open(CACHE_PATHS, "w", encoding="utf-8") as f:
+                json.dump(IMAGE_RECORDS, f)
+            logger.info("Saved cache to %s and %s", CACHE_EMBEDDINGS, CACHE_PATHS)
+
+    RECORD_BY_ID = {rec["id"]: idx for idx, rec in enumerate(IMAGE_RECORDS)}
+
+    FAISS_INDEX = faiss.IndexFlatIP(512)
+    if len(EMBEDDINGS) > 0:
+        FAISS_INDEX.add(EMBEDDINGS)
+
+    INDEX_BUILT = True
+    elapsed = time.perf_counter() - t0
+    logger.info(
+        "Index ready: %d images, %.1fs elapsed, CUDA=%s",
+        len(IMAGE_RECORDS), elapsed, torch.cuda.is_available(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
 class SearchRequest(BaseModel):
     query: str
-    top_n: int = Field(ge=1)
+    stage: int = Field(ge=1, le=4)
+    candidates: list[str] = Field(default_factory=list)
 
 
-class ImageRecord(BaseModel):
+class ResultRecord(BaseModel):
     id: str
     path: str
     category: str
-    tags: list[str]
+    probability: float
 
 
-class RefineTurn(BaseModel):
-    selected_ids: list[str] = Field(default_factory=list)
-    user_note: str = ""
+class SearchResponse(BaseModel):
+    stage: int
+    total: int
+    results: list[ResultRecord]
 
 
-class RefineRequest(BaseModel):
-    """Stateless multi-level refine: client sends full history each call (Option A)."""
-
-    level: int = Field(ge=1, le=4)
-    base_query: str
-    turns: list[RefineTurn] = Field(default_factory=list)
-    candidate_ids: list[str] = Field(default_factory=list)
-    top_n: int | None = None
-
-    @model_validator(mode="after")
-    def turns_match_level(self) -> RefineRequest:
-        expected = self.level - 1
-        if len(self.turns) != expected:
-            raise ValueError(
-                f"For level {self.level}, expected exactly {expected} prior turn(s) in `turns`, "
-                f"got {len(self.turns)}"
-            )
-        return self
-
-
+# ---------------------------------------------------------------------------
+# POC HTML UI
+# ---------------------------------------------------------------------------
 _POC_UI_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Image search POC</title>
+  <title>CLIP Image Search</title>
   <style>
     :root { font-family: system-ui, sans-serif; background: #1a1a1e; color: #e8e8ec; }
     body { max-width: 1100px; margin: 1rem auto; padding: 0 1rem; }
     h1 { font-size: 1.25rem; font-weight: 600; }
-    .tabs { display: flex; gap: 0.5rem; margin: 1rem 0; }
-    .tabs button { background: #333; color: #ccc; }
-    .tabs button.active { background: #3d6df2; color: #fff; }
-    .panel { display: none; }
-    .panel.visible { display: block; }
     .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 1rem 0; }
     input[type="text"] { flex: 1; min-width: 12rem; padding: 0.5rem 0.6rem; border-radius: 6px;
       border: 1px solid #444; background: #2a2a30; color: inherit; }
-    input[type="number"] { width: 4rem; padding: 0.5rem; border-radius: 6px;
-      border: 1px solid #444; background: #2a2a30; color: inherit; }
-    textarea { width: 100%; min-height: 4rem; padding: 0.5rem; border-radius: 6px;
-      border: 1px solid #444; background: #2a2a30; color: inherit; box-sizing: border-box; }
     button { padding: 0.5rem 1rem; border-radius: 6px; border: none; background: #3d6df2;
       color: #fff; cursor: pointer; font-weight: 500; }
     button.secondary { background: #444; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .meta { font-size: 0.85rem; color: #9898a6; margin-bottom: 1rem; }
     .err { color: #f66; margin: 0.5rem 0; white-space: pre-wrap; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; }
     .card { background: #25252c; border-radius: 8px; overflow: hidden; border: 1px solid #333; position: relative; }
-    .card.pickable { outline-offset: 2px; }
-    .card.pickable:has(input:checked) { outline: 2px solid #3d6df2; }
-    .card img { width: 100%; height: 160px; object-fit: cover; display: block; background: #111; }
-    .card .chk { position: absolute; top: 6px; left: 6px; width: 1.1rem; height: 1.1rem; z-index: 1; }
-    .card .body { padding: 0.5rem 0.65rem; font-size: 0.75rem; line-height: 1.35; }
+    .card.pickable { outline-offset: 2px; cursor: pointer; }
+    .card.pickable.selected { outline: 2px solid #3d6df2; }
+    .card img { width: 100%; height: 140px; object-fit: cover; display: block; background: #111; }
+    .card .body { padding: 0.4rem 0.55rem; font-size: 0.7rem; line-height: 1.3; }
     .card .id { font-weight: 600; word-break: break-all; color: #c8d4ff; }
-    .card .tags { color: #9898a6; margin-top: 0.25rem; }
+    .card .prob { color: #7fdf7f; }
     .hero { max-width: 480px; margin: 1rem auto; text-align: center; }
     .hero img { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px; }
+    .stage-bar { display: flex; gap: 0.35rem; margin: 0.75rem 0; }
+    .stage-bar .dot { width: 2rem; height: 0.35rem; border-radius: 3px; background: #333; }
+    .stage-bar .dot.done { background: #3d6df2; }
+    .stage-bar .dot.active { background: #6b8ff8; }
   </style>
 </head>
 <body>
-  <h1>Image retrieval POC</h1>
+  <h1>CLIP image retrieval</h1>
   <p class="meta" id="health">Loading…</p>
-  <div class="tabs">
-    <button type="button" id="tabQuick" class="active">Quick search</button>
-    <button type="button" id="tabRefine">4-level refine</button>
+
+  <div class="row" id="queryRow">
+    <input type="text" id="q" placeholder="Describe what you're looking for…" autocomplete="off" />
+    <button type="button" id="go">Search</button>
   </div>
 
-  <div id="panelQuick" class="panel visible">
+  <div class="stage-bar" id="stageBar">
+    <div class="dot" id="dot1"></div>
+    <div class="dot" id="dot2"></div>
+    <div class="dot" id="dot3"></div>
+    <div class="dot" id="dot4"></div>
+  </div>
+  <p class="meta" id="stageInfo"></p>
+
+  <div id="controls" style="display:none;">
     <div class="row">
-      <input type="text" id="q" placeholder="Query e.g. snow algoma" autocomplete="off" />
-      <label>top_n <input type="number" id="n" value="8" min="1" max="200" /></label>
-      <button type="button" id="go">Search</button>
+      <button type="button" id="nextStage">Next stage</button>
+      <button type="button" class="secondary" id="resetBtn">Start over</button>
     </div>
-    <p class="err" id="err" hidden></p>
-    <div class="grid" id="out"></div>
   </div>
 
-  <div id="panelRefine" class="panel">
-    <p class="meta" id="refineStep">Level 1 of 4 — targets ~90 / ~30 / ~10 / 1 images.</p>
-    <div class="row" id="refineStartRow">
-      <input type="text" id="rq" placeholder="e.g. I want a brown dog in snow" autocomplete="off" />
-      <button type="button" id="refineStart">Start level 1</button>
-    </div>
-    <p class="err" id="refineErr" hidden></p>
-    <div id="refineNoteWrap" style="display:none;">
-      <label class="meta">Optional note for next step</label>
-      <textarea id="refineNote" placeholder="e.g. more like the second one, outdoor light"></textarea>
-      <div class="row" style="margin-top:0.5rem;">
-        <button type="button" id="refineNext">Continue to next level</button>
-        <button type="button" class="secondary" id="refineReset">Start over</button>
-      </div>
-    </div>
-    <div class="grid" id="refineOut"></div>
-    <div id="refineDone" style="display:none;" class="hero">
-      <h2 class="meta">Final pick</h2>
-      <div id="refineHero"></div>
-      <button type="button" class="secondary" id="refineDoneReset" style="margin-top:1rem;">Start over</button>
-    </div>
+  <p class="err" id="err" hidden></p>
+  <div class="grid" id="out"></div>
+  <div id="heroDone" style="display:none;" class="hero">
+    <h2 class="meta">Final pick</h2>
+    <div id="heroContent"></div>
+    <button type="button" class="secondary" id="heroReset" style="margin-top:1rem;">Start over</button>
   </div>
 
   <script>
-    const LEVEL_TOP = [90, 30, 10, 1];
+    const STAGE_SIZES = [90, 30, 10, 1];
+    let state = { query: "", stage: 0, candidates: [], results: [] };
+
     function imgUrl(path) {
       return "/images/" + path.split("/").map(encodeURIComponent).join("/");
     }
+
     async function refreshHealth() {
       const el = document.getElementById("health");
       try {
         const r = await fetch("/health");
         const j = await r.json();
-        el.textContent = "Status: " + j.status + " · indexed images: " + j.image_count;
+        el.textContent = "Status: " + j.status + " · images: " + j.image_count +
+          " · index: " + (j.index_built ? "ready" : "building…") +
+          " · CUDA: " + j.cuda_available;
       } catch (e) {
-        el.textContent = "Could not reach /health — is the server running?";
+        el.textContent = "Could not reach /health";
       }
     }
-    function setTab(quick) {
-      document.getElementById("tabQuick").classList.toggle("active", quick);
-      document.getElementById("tabRefine").classList.toggle("active", !quick);
-      document.getElementById("panelQuick").classList.toggle("visible", quick);
-      document.getElementById("panelRefine").classList.toggle("visible", !quick);
-    }
-    document.getElementById("tabQuick").addEventListener("click", () => setTab(true));
-    document.getElementById("tabRefine").addEventListener("click", () => setTab(false));
 
-    async function search() {
-      const q = document.getElementById("q").value.trim();
-      const n = Math.max(1, parseInt(document.getElementById("n").value, 10) || 8);
+    function updateStageBar() {
+      for (let i = 1; i <= 4; i++) {
+        const dot = document.getElementById("dot" + i);
+        dot.className = "dot";
+        if (i < state.stage) dot.classList.add("done");
+        if (i === state.stage) dot.classList.add("active");
+      }
+      const info = document.getElementById("stageInfo");
+      if (state.stage === 0) {
+        info.textContent = "Enter a query to start (4 stages: 90 → 30 → 10 → 1).";
+      } else if (state.stage <= 3) {
+        info.textContent = "Stage " + state.stage + " of 4 — showing " +
+          state.results.length + " results. Select images then click Next stage (" +
+          STAGE_SIZES[state.stage] + " next).";
+      } else {
+        info.textContent = "Stage 4 — final result.";
+      }
+    }
+
+    function resetAll() {
+      state = { query: "", stage: 0, candidates: [], results: [] };
+      document.getElementById("q").value = "";
+      document.getElementById("q").disabled = false;
+      document.getElementById("go").style.display = "";
+      document.getElementById("controls").style.display = "none";
+      document.getElementById("out").innerHTML = "";
+      document.getElementById("err").hidden = true;
+      document.getElementById("heroDone").style.display = "none";
+      updateStageBar();
+    }
+
+    function renderCards(results, pickable) {
       const out = document.getElementById("out");
-      const err = document.getElementById("err");
-      const go = document.getElementById("go");
-      err.hidden = true;
       out.innerHTML = "";
-      if (!q) { err.textContent = "Enter a query."; err.hidden = false; return; }
-      go.disabled = true;
-      out.innerHTML = "<p class=\\"meta\\">Searching…</p>";
-      try {
-        const r = await fetch("/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: q, top_n: n }),
-        });
-        if (!r.ok) throw new Error("HTTP " + r.status + ": " + await r.text());
-        const items = await r.json();
-        out.innerHTML = "";
-        if (!items.length) { out.innerHTML = "<p class=\\"meta\\">No results.</p>"; return; }
-        for (const it of items) {
-          const card = document.createElement("div");
-          card.className = "card";
-          card.innerHTML =
-            '<img src="' + imgUrl(it.path) + '" alt="" loading="lazy" />' +
-            '<div class="body"><div class="id"></div><div>category: <span class="cat"></span></div><div class="tags"></div></div>';
-          card.querySelector(".id").textContent = it.id;
-          card.querySelector(".cat").textContent = it.category || "—";
-          card.querySelector(".tags").textContent = "tags: " + (it.tags || []).join(", ");
-          out.appendChild(card);
-        }
-      } catch (e) {
-        out.innerHTML = "";
-        err.textContent = String(e.message || e);
-        err.hidden = false;
-      } finally {
-        go.disabled = false;
-      }
-    }
-    document.getElementById("go").addEventListener("click", search);
-    document.getElementById("q").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
-
-    let refine = { baseQuery: "", turns: [], lastIds: [], displayLevel: 0 };
-
-    function refineSetStepText() {
-      const el = document.getElementById("refineStep");
-      if (refine.displayLevel === 0) {
-        el.textContent = "Level 1 of 4 — up to ~" + LEVEL_TOP[0] + " images. Enter your goal, then Start.";
-        return;
-      }
-      if (refine.displayLevel >= 4) {
-        el.textContent = "Level 4 of 4 — final result.";
-        return;
-      }
-      el.textContent = "Level " + refine.displayLevel + " of 4 — pick image(s), add an optional note, then continue (~" +
-        LEVEL_TOP[refine.displayLevel] + " results next).";
-    }
-
-    function resetRefine() {
-      refine = { baseQuery: "", turns: [], lastIds: [], displayLevel: 0 };
-      document.getElementById("rq").value = "";
-      document.getElementById("refineNote").value = "";
-      document.getElementById("refineStartRow").style.display = "";
-      document.getElementById("refineNoteWrap").style.display = "none";
-      document.getElementById("refineOut").innerHTML = "";
-      document.getElementById("refineErr").hidden = true;
-      document.getElementById("refineDone").style.display = "none";
-      document.getElementById("refineHero").innerHTML = "";
-      refineSetStepText();
-    }
-
-    function renderRefineCards(items, pickable) {
-      const out = document.getElementById("refineOut");
-      out.innerHTML = "";
-      for (const it of items) {
+      for (const it of results) {
         const card = document.createElement("div");
         card.className = "card" + (pickable ? " pickable" : "");
-        const chk = pickable
-          ? '<input type="checkbox" class="chk" data-id="' + it.id.replace(/"/g, "&quot;") + '" />'
-          : "";
-        card.innerHTML = chk +
+        card.dataset.id = it.id;
+        card.innerHTML =
           '<img src="' + imgUrl(it.path) + '" alt="" loading="lazy" />' +
-          '<div class="body"><div class="id"></div><div>category: <span class="cat"></span></div><div class="tags"></div></div>';
+          '<div class="body">' +
+            '<div class="id"></div>' +
+            '<div>category: <span class="cat"></span></div>' +
+            '<div class="prob"></div>' +
+          '</div>';
         card.querySelector(".id").textContent = it.id;
         card.querySelector(".cat").textContent = it.category || "—";
-        card.querySelector(".tags").textContent = "tags: " + (it.tags || []).join(", ");
+        card.querySelector(".prob").textContent = "p = " + it.probability.toFixed(4);
+        if (pickable) {
+          card.addEventListener("click", () => card.classList.toggle("selected"));
+        }
         out.appendChild(card);
       }
     }
 
-    async function refineRequest(payload) {
-      const err = document.getElementById("refineErr");
+    async function doSearch(query, stage, candidates) {
+      const err = document.getElementById("err");
       err.hidden = true;
-      const r = await fetch("/search/refine", {
+      const r = await fetch("/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ query: query, stage: stage, candidates: candidates }),
       });
       if (!r.ok) throw new Error("HTTP " + r.status + ": " + await r.text());
       return r.json();
     }
 
-    document.getElementById("refineStart").addEventListener("click", async () => {
-      const q = document.getElementById("rq").value.trim();
-      const err = document.getElementById("refineErr");
-      if (!q) { err.textContent = "Enter a base query."; err.hidden = false; return; }
-      refine.baseQuery = q;
-      refine.turns = [];
-      refine.lastIds = [];
-      refine.displayLevel = 0;
-      const btn = document.getElementById("refineStart");
+    document.getElementById("go").addEventListener("click", async () => {
+      const q = document.getElementById("q").value.trim();
+      const err = document.getElementById("err");
+      if (!q) { err.textContent = "Enter a query."; err.hidden = false; return; }
+      const btn = document.getElementById("go");
       btn.disabled = true;
-      document.getElementById("refineOut").innerHTML = "<p class=\\"meta\\">Loading level 1…</p>";
+      document.getElementById("out").innerHTML = '<p class="meta">Searching…</p>';
       try {
-        const items = await refineRequest({
-          level: 1,
-          base_query: refine.baseQuery,
-          turns: [],
-          candidate_ids: [],
-          top_n: LEVEL_TOP[0],
-        });
-        refine.lastIds = items.map((x) => x.id);
-        refine.displayLevel = 1;
-        document.getElementById("refineStartRow").style.display = "none";
-        document.getElementById("refineNoteWrap").style.display = "";
-        refineSetStepText();
-        renderRefineCards(items, true);
+        const data = await doSearch(q, 1, []);
+        state.query = q;
+        state.stage = 1;
+        state.results = data.results;
+        state.candidates = data.results.map(r => r.id);
+        document.getElementById("q").disabled = true;
+        document.getElementById("go").style.display = "none";
+        document.getElementById("controls").style.display = "";
+        updateStageBar();
+        renderCards(data.results, true);
       } catch (e) {
+        document.getElementById("out").innerHTML = "";
         err.textContent = String(e.message || e);
         err.hidden = false;
-        document.getElementById("refineOut").innerHTML = "";
       } finally {
         btn.disabled = false;
       }
     });
+    document.getElementById("q").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("go").click();
+    });
 
-    document.getElementById("refineNext").addEventListener("click", async () => {
-      if (refine.displayLevel < 1 || refine.displayLevel > 3) return;
-      const nextLevel = refine.displayLevel + 1;
-      const boxes = document.querySelectorAll("#refineOut input.chk:checked");
-      const selected = Array.from(boxes).map((b) => b.getAttribute("data-id"));
-      const note = document.getElementById("refineNote").value.trim();
-      refine.turns = refine.turns.concat([{ selected_ids: selected, user_note: note }]);
-      const btn = document.getElementById("refineNext");
+    document.getElementById("nextStage").addEventListener("click", async () => {
+      if (state.stage < 1 || state.stage >= 4) return;
+      const nextStage = state.stage + 1;
+      const selected = Array.from(document.querySelectorAll("#out .card.selected"))
+        .map(c => c.dataset.id);
+      const cands = selected.length > 0 ? selected : state.candidates;
+      const btn = document.getElementById("nextStage");
       btn.disabled = true;
-      document.getElementById("refineOut").innerHTML = "<p class=\\"meta\\">Loading level " + nextLevel + "…</p>";
-      document.getElementById("refineErr").hidden = true;
+      document.getElementById("out").innerHTML = '<p class="meta">Loading stage ' + nextStage + '…</p>';
       try {
-        const items = await refineRequest({
-          level: nextLevel,
-          base_query: refine.baseQuery,
-          turns: refine.turns,
-          candidate_ids: refine.lastIds,
-          top_n: LEVEL_TOP[nextLevel - 1],
-        });
-        refine.lastIds = items.map((x) => x.id);
-        refine.displayLevel = nextLevel;
-        document.getElementById("refineNote").value = "";
-        refineSetStepText();
-        if (nextLevel >= 4) {
-          document.getElementById("refineNoteWrap").style.display = "none";
-          document.getElementById("refineOut").innerHTML = "";
-          document.getElementById("refineDone").style.display = "";
-          const it = items[0];
-          const h = document.getElementById("refineHero");
+        const data = await doSearch(state.query, nextStage, cands);
+        state.stage = nextStage;
+        state.results = data.results;
+        state.candidates = data.results.map(r => r.id);
+        updateStageBar();
+        if (nextStage >= 4) {
+          document.getElementById("controls").style.display = "none";
+          document.getElementById("out").innerHTML = "";
+          document.getElementById("heroDone").style.display = "";
+          const it = data.results[0];
+          const h = document.getElementById("heroContent");
           h.innerHTML = it
-            ? '<img src="' + imgUrl(it.path) + '" alt="" /><p class="meta">' + it.id + "</p>"
-            : "<p class=\\"meta\\">No result.</p>";
+            ? '<img src="' + imgUrl(it.path) + '" alt="" />' +
+              '<p class="meta">' + it.id + ' (p=' + it.probability.toFixed(4) + ')</p>'
+            : '<p class="meta">No result.</p>';
         } else {
-          renderRefineCards(items, true);
+          renderCards(data.results, true);
         }
       } catch (e) {
-        document.getElementById("refineErr").textContent = String(e.message || e);
-        document.getElementById("refineErr").hidden = false;
-        refine.turns.pop();
+        document.getElementById("err").textContent = String(e.message || e);
+        document.getElementById("err").hidden = false;
       } finally {
         btn.disabled = false;
       }
     });
 
-    document.getElementById("refineReset").addEventListener("click", resetRefine);
-    document.getElementById("refineDoneReset").addEventListener("click", resetRefine);
+    document.getElementById("resetBtn").addEventListener("click", resetAll);
+    document.getElementById("heroReset").addEventListener("click", resetAll);
 
     refreshHealth();
-    refineSetStepText();
+    updateStageBar();
   </script>
 </body>
 </html>"""
 
 
-app = FastAPI(title="Image retrieval POC")
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
+app = FastAPI(title="CLIP image retrieval")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -408,266 +445,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-IMAGE_RECORDS: list[dict[str, Any]] = []
+
+@app.on_event("startup")
+def startup_event() -> None:
+    build_index()
 
 
-def _load_image_records() -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    if not IMAGE_ROOT.is_dir():
-        logger.warning("IMAGE_ROOT does not exist or is not a directory: %s", IMAGE_ROOT.resolve())
-        return records
-
-    root = IMAGE_ROOT.resolve()
-    paths: list[Path] = []
-    for p in sorted(root.rglob("*")):
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
-            paths.append(p)
-
-    for file_path in paths:
-        rel = file_path.relative_to(root)
-        stem = rel.stem
-        category = rel.parent.name if rel.parent != Path(".") else ""
-        tags = stem.split("_") if stem else []
-        rel_posix = rel.as_posix()
-        rec_id = f"{category}/{stem}" if category else stem
-        records.append(
-            {
-                "id": rec_id,
-                "path": rel_posix,
-                "category": category,
-                "tags": tags,
-            }
-        )
-    return records
-
-
-IMAGE_RECORDS = _load_image_records()
-RECORD_BY_ID: dict[str, dict[str, Any]] = {r["id"]: r for r in IMAGE_RECORDS}
-logger.info(
-    "Loaded %d image record(s) from %s",
-    len(IMAGE_RECORDS),
-    IMAGE_ROOT.resolve(),
-)
-
-
-def _query_tokens(query: str) -> list[str]:
-    return [t.lower() for t in query.split() if t.strip()]
-
-
-def _whole_word_match(token: str, text: str) -> bool:
-    """True if token appears as its own word in text (not as a substring inside a longer token)."""
-    if not token or not text:
-        return False
-    try:
-        return (
-            re.search(rf"(?<!\w){re.escape(token)}(?!\w)", text, flags=re.IGNORECASE) is not None
-        )
-    except re.error:
-        return False
-
-
-def _prefilter_candidates(query: str, all_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    tokens = _query_tokens(query)
-    if not tokens:
-        return list(all_records)
-
-    out: list[dict[str, Any]] = []
-    for rec in all_records:
-        cat_l = (rec["category"] or "").lower()
-        if any(_whole_word_match(tok, cat_l) for tok in tokens):
-            out.append(rec)
-            continue
-        tags = rec["tags"]
-        if any(any(_whole_word_match(tok, tag.lower()) for tag in tags) for tok in tokens):
-            out.append(rec)
-    return out
-
-
-def _format_candidates_for_prompt(candidates: list[dict[str, Any]]) -> str:
-    lines: list[str] = []
-    for i, rec in enumerate(candidates, start=1):
-        tags_str = ", ".join(rec["tags"])
-        lines.append(f"{i}. {rec['id']} | category={rec['category']} | tags=[{tags_str}]")
-    return "\n".join(lines)
-
-
-def _extract_json_array(text: str) -> str | None:
-    s = text.strip()
-    fence = re.match(r"^```(?:json)?\s*([\s\S]*?)\s*```$", s, re.IGNORECASE)
-    if fence:
-        s = fence.group(1).strip()
-    start = s.find("[")
-    end = s.rfind("]")
-    if start == -1 or end == -1 or end <= start:
-        return None
-    return s[start : end + 1]
-
-
-def _parse_ranked_ids(content: str) -> list[str] | None:
-    chunk = _extract_json_array(content)
-    if not chunk:
-        return None
-    try:
-        data = json.loads(chunk)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(data, list):
-        return None
-    out: list[str] = []
-    for item in data:
-        if isinstance(item, str):
-            out.append(item)
-    return out
-
-
-def _ollama_chat(messages: list[dict[str, str]]) -> Any:
-    return ollama.chat(model=OLLAMA_MODEL, messages=messages)
-
-
-def _rank_with_ollama_from_parts(
-    intro: str, candidates: list[dict[str, Any]]
-) -> tuple[list[str] | None, float, bool, bool]:
-    """
-    Returns (ranked_ids_or_none, elapsed_seconds, timed_out, ollama_request_failed).
-    ollama_request_failed is True when the Ollama call raised (already logged); do not log "bad JSON".
-    """
-    user_body = (
-        f"{intro.strip()}\n\n"
-        f"Candidates (use ONLY these IDs, verbatim):\n{_format_candidates_for_prompt(candidates)}\n\n"
-        "Return a JSON array of candidate IDs, most relevant first."
-    )
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": user_body},
-    ]
-
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(_ollama_chat, messages)
-    t0 = time.perf_counter()
-    timed_out = False
-    ollama_request_failed = False
-    response: Any = None
-    try:
-        response = future.result(timeout=OLLAMA_TIMEOUT_SEC)
-    except concurrent.futures.TimeoutError:
-        timed_out = True
-        response = None
-        logger.warning(
-            "Ollama chat timed out after %.1fs (candidate_count=%d)",
-            OLLAMA_TIMEOUT_SEC,
-            len(candidates),
-        )
-    except ConnectionError as e:
-        ollama_request_failed = True
-        response = None
-        logger.warning(
-            "Ollama unreachable (%s); candidate_count=%d — using fallback order. "
-            "Start Ollama and ensure the mistral model is pulled.",
-            e,
-            len(candidates),
-        )
-    except ResponseError as e:
-        ollama_request_failed = True
-        response = None
-        logger.warning(
-            "Ollama returned an error (%s); candidate_count=%d — using fallback order. "
-            "If you see 'model not found', run: ollama pull %s",
-            e,
-            len(candidates),
-            OLLAMA_MODEL,
-        )
-    except Exception:
-        ollama_request_failed = True
-        logger.exception(
-            "Ollama chat failed (candidate_count=%d); using pre-filter order fallback",
-            len(candidates),
-        )
-        response = None
-    finally:
-        executor.shutdown(wait=False, cancel_futures=False)
-
-    elapsed = time.perf_counter() - t0
-
-    if timed_out:
-        return None, elapsed, True, False
-    if response is None:
-        return None, elapsed, False, ollama_request_failed
-
-    content = ""
-    try:
-        msg = response.get("message") or {}
-        content = msg.get("content") or ""
-    except (AttributeError, TypeError):
-        content = str(response)
-
-    ids = _parse_ranked_ids(content)
-    return ids, elapsed, False, False
-
-
-def _rank_with_ollama(
-    user_query: str, candidates: list[dict[str, Any]]
-) -> tuple[list[str] | None, float, bool, bool]:
-    intro = f"User query: {user_query}"
-    return _rank_with_ollama_from_parts(intro, candidates)
-
-
-def _records_in_id_order(ids: list[str], record_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for i in ids:
-        rec = record_by_id.get(i)
-        if rec is not None:
-            out.append(rec)
-    return out
-
-
-def _build_refine_intro(base_query: str, turns: list[RefineTurn]) -> str:
-    parts: list[str] = [f"Original request: {base_query.strip()}"]
-    for step_i, t in enumerate(turns, start=1):
-        lines: list[str] = [f"Step {step_i} feedback:"]
-        note = (t.user_note or "").strip()
-        if note:
-            lines.append(f'  User note: "{note}"')
-        if t.selected_ids:
-            lines.append("  User highlighted these images:")
-            for sid in t.selected_ids:
-                rec = RECORD_BY_ID.get(sid)
-                if rec:
-                    tags_str = ", ".join(rec["tags"])
-                    lines.append(
-                        f"    - id={rec['id']} | category={rec['category']} | tags=[{tags_str}]"
-                    )
-                else:
-                    lines.append(f"    - id={sid} (unknown id)")
-        parts.append("\n".join(lines))
-    parts.append(
-        "Rank the following candidate image IDs for the combined intent (most relevant first). "
-        "Consider the original request and every refinement step."
-    )
-    return "\n\n".join(parts)
-
-
-def _records_from_ranked_ids(
-    ranked_ids: list[str],
-    candidates: list[dict[str, Any]],
-    top_n: int,
-) -> list[dict[str, Any]]:
-    cand_by_id = {rec["id"]: rec for rec in candidates}
-    cand_id_set = set(cand_by_id.keys())
-    seen: set[str] = set()
-    ordered: list[dict[str, Any]] = []
-    for rid in ranked_ids:
-        if rid in cand_id_set and rid not in seen:
-            ordered.append(cand_by_id[rid])
-            seen.add(rid)
-        if len(ordered) >= top_n:
-            break
-    return ordered[:top_n]
-
-
-def _fallback_slice(candidates: list[dict[str, Any]], top_n: int) -> list[dict[str, Any]]:
-    return candidates[:top_n]
-
-
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def poc_ui() -> str:
     return _POC_UI_HTML
@@ -675,101 +461,125 @@ def poc_ui() -> str:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "image_count": len(IMAGE_RECORDS)}
+    return {
+        "status": "ok",
+        "image_count": len(IMAGE_RECORDS),
+        "index_built": INDEX_BUILT,
+        "cuda_available": torch.cuda.is_available(),
+    }
 
 
-@app.post("/search")
-def search(body: SearchRequest) -> list[ImageRecord]:
-    all_recs = IMAGE_RECORDS
-    if not all_recs:
-        return []
+@app.post("/search", response_model=SearchResponse)
+def search(body: SearchRequest) -> SearchResponse:
+    if not INDEX_BUILT:
+        raise HTTPException(status_code=503, detail="index not ready")
 
-    candidates = _prefilter_candidates(body.query, all_recs)
-    if not candidates:
-        candidates = list(all_recs)
+    stage = body.stage
+    k = STAGE_SIZES[stage - 1]
 
-    n_cand = len(candidates)
-    logger.info("Search: passing %d candidate(s) to Ollama (top_n=%d)", n_cand, body.top_n)
-
-    ranked_ids, ollama_elapsed, timed_out, ollama_failed = _rank_with_ollama(body.query, candidates)
-    logger.info("Ollama call finished in %.3fs (timed_out=%s)", ollama_elapsed, timed_out)
-
-    if timed_out or ranked_ids is None:
-        if not timed_out and not ollama_failed:
-            logger.warning("Malformed or unparseable Ollama JSON; using pre-filter order fallback")
-        sliced = _fallback_slice(candidates, body.top_n)
-        return [ImageRecord(**r) for r in sliced]
-
-    ordered = _records_from_ranked_ids(ranked_ids, candidates, body.top_n)
-    return [ImageRecord(**r) for r in ordered]
-
-
-@app.post("/search/refine")
-def search_refine(body: RefineRequest) -> list[ImageRecord]:
-    """Multi-level refinement; client resends full `turns` and `candidate_ids` each request (stateless)."""
-    all_recs = IMAGE_RECORDS
-    if not all_recs:
-        return []
-
-    for ti, t in enumerate(body.turns):
-        for sid in t.selected_ids:
-            if sid not in RECORD_BY_ID:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Unknown selected_id in turns[{ti}]: {sid!r}",
-                )
-
-    tn = body.top_n if body.top_n is not None else LEVEL_TOP_N[body.level - 1]
-    tn = min(max(tn, 1), 500)
-
-    if body.level == 1:
-        candidates = _prefilter_candidates(body.base_query, all_recs)
-        if not candidates:
-            candidates = list(all_recs)
-        intro = f"User query: {body.base_query.strip()}"
-    else:
-        if not body.candidate_ids:
-            logger.warning(
-                "Refine level %d: empty candidate_ids; falling back to full index",
-                body.level,
-            )
-            pool = list(all_recs)
+    try:
+        if stage == 1:
+            return _search_stage1(body.query, k)
         else:
-            unknown = [i for i in body.candidate_ids if i not in RECORD_BY_ID]
-            if unknown:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Unknown candidate_ids (showing first 8): {unknown[:8]}",
+            return _search_later_stage(stage, k, body.candidates)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Search failed at stage %d", stage)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def _search_stage1(query: str, k: int) -> SearchResponse:
+    text_tokens = clip.tokenize([query]).to(DEVICE)
+    with torch.no_grad():
+        text_feat = CLIP_MODEL.encode_text(text_tokens)
+    text_feat = text_feat.cpu().numpy().astype(np.float32)
+    text_feat /= np.linalg.norm(text_feat, axis=1, keepdims=True)
+
+    n_search = min(k, FAISS_INDEX.ntotal)
+    if n_search == 0:
+        return SearchResponse(stage=1, total=0, results=[])
+
+    scores, indices = FAISS_INDEX.search(text_feat, n_search)
+    scores = scores[0]
+    indices = indices[0]
+
+    order, probs = rank_by_softmax(scores)
+
+    results: list[ResultRecord] = []
+    for rank_pos in range(len(order)):
+        idx = int(indices[order[rank_pos]])
+        rec = IMAGE_RECORDS[idx]
+        results.append(
+            ResultRecord(
+                id=rec["id"],
+                path=rec["path"],
+                category=rec["category"],
+                probability=round(float(probs[rank_pos]), 4),
+            )
+        )
+    return SearchResponse(stage=1, total=len(results), results=results)
+
+
+def _search_later_stage(
+    stage: int, k: int, candidate_ids: list[str]
+) -> SearchResponse:
+    if not candidate_ids:
+        logger.warning("Stage %d: empty candidates, falling back to zero-vector search", stage)
+        n_search = min(k, FAISS_INDEX.ntotal)
+        if n_search == 0:
+            return SearchResponse(stage=stage, total=0, results=[])
+        qvec = np.zeros((1, 512), dtype=np.float32)
+        scores, indices = FAISS_INDEX.search(qvec, n_search)
+        uniform_p = round(1.0 / max(n_search, 1), 4)
+        results = []
+        for i in range(n_search):
+            idx = int(indices[0][i])
+            rec = IMAGE_RECORDS[idx]
+            results.append(
+                ResultRecord(
+                    id=rec["id"], path=rec["path"],
+                    category=rec["category"], probability=uniform_p,
                 )
-            pool = _records_in_id_order(body.candidate_ids, RECORD_BY_ID)
-            if not pool:
-                logger.warning(
-                    "Refine level %d: candidate_ids resolved to no records; falling back to full index",
-                    body.level,
-                )
-                pool = list(all_recs)
-        candidates = pool
-        intro = _build_refine_intro(body.base_query, body.turns)
+            )
+        return SearchResponse(stage=stage, total=len(results), results=results)
 
-    n_cand = len(candidates)
-    logger.info(
-        "Refine L%d: passing %d candidate(s) to Ollama (top_n=%d)",
-        body.level,
-        n_cand,
-        tn,
-    )
+    valid_indices: list[int] = []
+    for cid in candidate_ids:
+        idx = RECORD_BY_ID.get(cid)
+        if idx is None:
+            logger.warning("Stage %d: unknown candidate id %r, skipping", stage, cid)
+            continue
+        valid_indices.append(idx)
 
-    ranked_ids, ollama_elapsed, timed_out, ollama_failed = _rank_with_ollama_from_parts(intro, candidates)
-    logger.info("Ollama call finished in %.3fs (timed_out=%s)", ollama_elapsed, timed_out)
+    if not valid_indices:
+        return SearchResponse(stage=stage, total=0, results=[])
 
-    if timed_out or ranked_ids is None:
-        if not timed_out and not ollama_failed:
-            logger.warning("Malformed or unparseable Ollama JSON; using pre-filter order fallback")
-        sliced = _fallback_slice(candidates, tn)
-        return [ImageRecord(**r) for r in sliced]
+    cand_embeddings = EMBEDDINGS[valid_indices]  # (C, 512)
 
-    ordered = _records_from_ranked_ids(ranked_ids, candidates, tn)
-    return [ImageRecord(**r) for r in ordered]
+    anchor_count = min(5, len(valid_indices))
+    anchor = cand_embeddings[:anchor_count].mean(axis=0, keepdims=True)  # (1, 512)
+    anchor /= np.linalg.norm(anchor, axis=1, keepdims=True)
+
+    cosine_scores = (cand_embeddings @ anchor.T).squeeze()  # (C,)
+    if cosine_scores.ndim == 0:
+        cosine_scores = cosine_scores.reshape(1)
+
+    order, probs = rank_by_softmax(cosine_scores)
+
+    results: list[ResultRecord] = []
+    for rank_pos in range(min(k, len(order))):
+        orig_idx = valid_indices[order[rank_pos]]
+        rec = IMAGE_RECORDS[orig_idx]
+        results.append(
+            ResultRecord(
+                id=rec["id"],
+                path=rec["path"],
+                category=rec["category"],
+                probability=round(float(probs[rank_pos]), 4),
+            )
+        )
+    return SearchResponse(stage=stage, total=len(results), results=results)
 
 
 @app.get("/images/{file_path:path}")
@@ -794,33 +604,10 @@ def serve_image(file_path: str) -> FileResponse:
     return FileResponse(target)
 
 
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    import argparse
-    import sys
-
     import uvicorn
-
-    parser = argparse.ArgumentParser(description="Image retrieval POC backend.")
-    sub = parser.add_subparsers(dest="cmd", required=False)
-
-    sub.add_parser("serve", help="Run HTTP server (default if no subcommand is given).")
-    p_exp = sub.add_parser(
-        "export-dataset",
-        help="Write processed dataset metadata (id, path, category, tags) to a JSON file.",
-    )
-    p_exp.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        default=Path("collage_images_dataset.json"),
-        help="Output file path (default: collage_images_dataset.json).",
-    )
-
-    args = parser.parse_args()
-    if args.cmd == "export-dataset":
-        out: Path = args.output
-        out.write_text(json.dumps(IMAGE_RECORDS, indent=2), encoding="utf-8")
-        print(f"Wrote {len(IMAGE_RECORDS)} record(s) to {out.resolve()}", file=sys.stderr)
-        sys.exit(0)
 
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
