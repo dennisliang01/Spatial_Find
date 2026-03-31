@@ -184,6 +184,7 @@ class SearchRequest(BaseModel):
     query: str
     stage: int = Field(ge=1, le=4)
     candidates: list[str] = Field(default_factory=list)
+    selected: list[str] = Field(default_factory=list)
 
 
 class ResultRecord(BaseModel):
@@ -222,9 +223,10 @@ _POC_UI_HTML = """<!DOCTYPE html>
     .meta { font-size: 0.85rem; color: #9898a6; margin-bottom: 1rem; }
     .err { color: #f66; margin: 0.5rem 0; white-space: pre-wrap; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; }
-    .card { background: #25252c; border-radius: 8px; overflow: hidden; border: 1px solid #333; position: relative; }
-    .card.pickable { outline-offset: 2px; cursor: pointer; }
-    .card.pickable.selected { outline: 2px solid #3d6df2; }
+    .card { background: #25252c; border-radius: 8px; overflow: hidden; border: 1px solid #333;
+      position: relative; transition: transform 0.1s, outline-color 0.15s; }
+    .card.pickable { outline: 2px solid transparent; outline-offset: 2px; cursor: pointer; }
+    .card.pickable:hover { transform: scale(1.03); outline-color: #555; }
     .card img { width: 100%; height: 140px; object-fit: cover; display: block; background: #111; }
     .card .body { padding: 0.4rem 0.55rem; font-size: 0.7rem; line-height: 1.3; }
     .card .id { font-weight: 600; word-break: break-all; color: #c8d4ff; }
@@ -235,6 +237,10 @@ _POC_UI_HTML = """<!DOCTYPE html>
     .stage-bar .dot { width: 2rem; height: 0.35rem; border-radius: 3px; background: #333; }
     .stage-bar .dot.done { background: #3d6df2; }
     .stage-bar .dot.active { background: #6b8ff8; }
+    .picks { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; flex-wrap: wrap; }
+    .picks .pick-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px;
+      border: 2px solid #3d6df2; }
+    .picks .pick-label { font-size: 0.7rem; color: #9898a6; }
   </style>
 </head>
 <body>
@@ -254,9 +260,12 @@ _POC_UI_HTML = """<!DOCTYPE html>
   </div>
   <p class="meta" id="stageInfo"></p>
 
+  <div id="picksRow" class="picks" style="display:none;">
+    <span class="pick-label">Selected:</span>
+  </div>
+
   <div id="controls" style="display:none;">
     <div class="row">
-      <button type="button" id="nextStage">Next stage</button>
       <button type="button" class="secondary" id="resetBtn">Start over</button>
     </div>
   </div>
@@ -271,7 +280,8 @@ _POC_UI_HTML = """<!DOCTYPE html>
 
   <script>
     const STAGE_SIZES = [90, 30, 10, 1];
-    let state = { query: "", stage: 0, candidates: [], results: [] };
+    let state = { query: "", stage: 0, candidates: [], results: [], selected: [] };
+    let advancing = false;
 
     function imgUrl(path) {
       return "/images/" + path.split("/").map(encodeURIComponent).join("/");
@@ -299,18 +309,35 @@ _POC_UI_HTML = """<!DOCTYPE html>
       }
       const info = document.getElementById("stageInfo");
       if (state.stage === 0) {
-        info.textContent = "Enter a query to start (4 stages: 90 → 30 → 10 → 1).";
+        info.textContent = "Enter a query to start (4 stages: 90 \\u2192 30 \\u2192 10 \\u2192 1).";
       } else if (state.stage <= 3) {
-        info.textContent = "Stage " + state.stage + " of 4 — showing " +
-          state.results.length + " results. Select images then click Next stage (" +
+        info.textContent = "Stage " + state.stage + " of 4 \\u2014 showing " +
+          state.results.length + " results. Click an image to refine (" +
           STAGE_SIZES[state.stage] + " next).";
       } else {
-        info.textContent = "Stage 4 — final result.";
+        info.textContent = "Stage 4 \\u2014 final result.";
+      }
+    }
+
+    function renderPicks() {
+      const row = document.getElementById("picksRow");
+      row.innerHTML = '<span class="pick-label">Selected:</span>';
+      if (state.selected.length === 0) { row.style.display = "none"; return; }
+      row.style.display = "flex";
+      for (const s of state.selected) {
+        const found = state.results.find(r => r.id === s) ||
+          { path: s.replace(/\\/[^/]+$/, "") + "/" + s.split("/").pop() + ".JPEG" };
+        const img = document.createElement("img");
+        img.className = "pick-thumb";
+        img.src = imgUrl(found.path || "");
+        img.title = s;
+        row.appendChild(img);
       }
     }
 
     function resetAll() {
-      state = { query: "", stage: 0, candidates: [], results: [] };
+      state = { query: "", stage: 0, candidates: [], results: [], selected: [] };
+      advancing = false;
       document.getElementById("q").value = "";
       document.getElementById("q").disabled = false;
       document.getElementById("go").style.display = "";
@@ -318,6 +345,7 @@ _POC_UI_HTML = """<!DOCTYPE html>
       document.getElementById("out").innerHTML = "";
       document.getElementById("err").hidden = true;
       document.getElementById("heroDone").style.display = "none";
+      document.getElementById("picksRow").style.display = "none";
       updateStageBar();
     }
 
@@ -328,6 +356,7 @@ _POC_UI_HTML = """<!DOCTYPE html>
         const card = document.createElement("div");
         card.className = "card" + (pickable ? " pickable" : "");
         card.dataset.id = it.id;
+        card.dataset.path = it.path;
         card.innerHTML =
           '<img src="' + imgUrl(it.path) + '" alt="" loading="lazy" />' +
           '<div class="body">' +
@@ -336,68 +365,38 @@ _POC_UI_HTML = """<!DOCTYPE html>
             '<div class="prob"></div>' +
           '</div>';
         card.querySelector(".id").textContent = it.id;
-        card.querySelector(".cat").textContent = it.category || "—";
+        card.querySelector(".cat").textContent = it.category || "\\u2014";
         card.querySelector(".prob").textContent = "p = " + it.probability.toFixed(4);
         if (pickable) {
-          card.addEventListener("click", () => card.classList.toggle("selected"));
+          card.addEventListener("click", () => pickImage(it.id));
         }
         out.appendChild(card);
       }
     }
 
-    async function doSearch(query, stage, candidates) {
+    async function doSearch(query, stage, candidates, selected) {
       const err = document.getElementById("err");
       err.hidden = true;
       const r = await fetch("/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query, stage: stage, candidates: candidates }),
+        body: JSON.stringify({ query: query, stage: stage, candidates: candidates, selected: selected }),
       });
       if (!r.ok) throw new Error("HTTP " + r.status + ": " + await r.text());
       return r.json();
     }
 
-    document.getElementById("go").addEventListener("click", async () => {
-      const q = document.getElementById("q").value.trim();
-      const err = document.getElementById("err");
-      if (!q) { err.textContent = "Enter a query."; err.hidden = false; return; }
-      const btn = document.getElementById("go");
-      btn.disabled = true;
-      document.getElementById("out").innerHTML = '<p class="meta">Searching…</p>';
-      try {
-        const data = await doSearch(q, 1, []);
-        state.query = q;
-        state.stage = 1;
-        state.results = data.results;
-        state.candidates = data.results.map(r => r.id);
-        document.getElementById("q").disabled = true;
-        document.getElementById("go").style.display = "none";
-        document.getElementById("controls").style.display = "";
-        updateStageBar();
-        renderCards(data.results, true);
-      } catch (e) {
-        document.getElementById("out").innerHTML = "";
-        err.textContent = String(e.message || e);
-        err.hidden = false;
-      } finally {
-        btn.disabled = false;
-      }
-    });
-    document.getElementById("q").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") document.getElementById("go").click();
-    });
+    async function pickImage(id) {
+      if (advancing || state.stage < 1 || state.stage >= 4) return;
+      advancing = true;
 
-    document.getElementById("nextStage").addEventListener("click", async () => {
-      if (state.stage < 1 || state.stage >= 4) return;
+      state.selected.push(id);
+      renderPicks();
+
       const nextStage = state.stage + 1;
-      const selected = Array.from(document.querySelectorAll("#out .card.selected"))
-        .map(c => c.dataset.id);
-      const cands = selected.length > 0 ? selected : state.candidates;
-      const btn = document.getElementById("nextStage");
-      btn.disabled = true;
       document.getElementById("out").innerHTML = '<p class="meta">Loading stage ' + nextStage + '…</p>';
       try {
-        const data = await doSearch(state.query, nextStage, cands);
+        const data = await doSearch(state.query, nextStage, state.candidates, state.selected);
         state.stage = nextStage;
         state.results = data.results;
         state.candidates = data.results.map(r => r.id);
@@ -416,11 +415,45 @@ _POC_UI_HTML = """<!DOCTYPE html>
           renderCards(data.results, true);
         }
       } catch (e) {
+        state.selected.pop();
+        renderPicks();
         document.getElementById("err").textContent = String(e.message || e);
         document.getElementById("err").hidden = false;
       } finally {
+        advancing = false;
+      }
+    }
+
+    document.getElementById("go").addEventListener("click", async () => {
+      const q = document.getElementById("q").value.trim();
+      const err = document.getElementById("err");
+      if (!q) { err.textContent = "Enter a query."; err.hidden = false; return; }
+      const btn = document.getElementById("go");
+      btn.disabled = true;
+      document.getElementById("out").innerHTML = '<p class="meta">Searching…</p>';
+      try {
+        const data = await doSearch(q, 1, [], []);
+        state.query = q;
+        state.stage = 1;
+        state.results = data.results;
+        state.candidates = data.results.map(r => r.id);
+        state.selected = [];
+        document.getElementById("q").disabled = true;
+        document.getElementById("go").style.display = "none";
+        document.getElementById("controls").style.display = "";
+        updateStageBar();
+        renderPicks();
+        renderCards(data.results, true);
+      } catch (e) {
+        document.getElementById("out").innerHTML = "";
+        err.textContent = String(e.message || e);
+        err.hidden = false;
+      } finally {
         btn.disabled = false;
       }
+    });
+    document.getElementById("q").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("go").click();
     });
 
     document.getElementById("resetBtn").addEventListener("click", resetAll);
@@ -481,7 +514,7 @@ def search(body: SearchRequest) -> SearchResponse:
         if stage == 1:
             return _search_stage1(body.query, k)
         else:
-            return _search_later_stage(stage, k, body.candidates)
+            return _search_later_stage(stage, k, body.candidates, body.selected)
     except HTTPException:
         raise
     except Exception as exc:
@@ -522,7 +555,7 @@ def _search_stage1(query: str, k: int) -> SearchResponse:
 
 
 def _search_later_stage(
-    stage: int, k: int, candidate_ids: list[str]
+    stage: int, k: int, candidate_ids: list[str], selected_ids: list[str]
 ) -> SearchResponse:
     if not candidate_ids:
         logger.warning("Stage %d: empty candidates, falling back to zero-vector search", stage)
@@ -557,9 +590,23 @@ def _search_later_stage(
 
     cand_embeddings = EMBEDDINGS[valid_indices]  # (C, 512)
 
-    anchor_count = min(5, len(valid_indices))
-    anchor = cand_embeddings[:anchor_count].mean(axis=0, keepdims=True)  # (1, 512)
-    anchor /= np.linalg.norm(anchor, axis=1, keepdims=True)
+    # Build anchor from user-selected images across prior stages
+    sel_emb_indices: list[int] = []
+    for sid in selected_ids:
+        idx = RECORD_BY_ID.get(sid)
+        if idx is not None:
+            sel_emb_indices.append(idx)
+        else:
+            logger.warning("Stage %d: unknown selected id %r, skipping", stage, sid)
+
+    if sel_emb_indices:
+        anchor = EMBEDDINGS[sel_emb_indices].mean(axis=0, keepdims=True)
+    else:
+        anchor = cand_embeddings[:min(5, len(valid_indices))].mean(axis=0, keepdims=True)
+
+    norm = np.linalg.norm(anchor, axis=1, keepdims=True)
+    norm[norm == 0] = 1.0
+    anchor /= norm
 
     cosine_scores = (cand_embeddings @ anchor.T).squeeze()  # (C,)
     if cosine_scores.ndim == 0:
