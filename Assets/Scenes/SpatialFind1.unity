@@ -390,6 +390,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  populateRandomOnStart: 1
   columns: 10
   rows: 9
   cellSize: {x: 90, y: 70}
@@ -397,10 +398,14 @@ MonoBehaviour:
   padding: {x: 20, y: 20}
   canvasScale: 0.015
   imageFolderName: collague_images
+  absoluteDatasetRoot: 
+  apiClient: {fileID: 0}
+  loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
   panelBackground: {r: 0.7, g: 0.7, b: 0.7, a: 1}
   cellBackground: {r: 1, g: 1, b: 1, a: 1}
   gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
   headerBarColor: {r: 0.45, g: 0.45, b: 0.45, a: 0.9}
+  layerLabelText: Layer
 --- !u!4 &231418495
 Transform:
   m_ObjectHideFlags: 0
@@ -2684,6 +2689,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  populateRandomOnStart: 1
   columns: 6
   rows: 5
   cellSize: {x: 90, y: 70}
@@ -2691,10 +2697,14 @@ MonoBehaviour:
   padding: {x: 20, y: 20}
   canvasScale: 0.015
   imageFolderName: collague_images
+  absoluteDatasetRoot: 
+  apiClient: {fileID: 0}
+  loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
   panelBackground: {r: 0.7, g: 0.7, b: 0.7, a: 1}
   cellBackground: {r: 1, g: 1, b: 1, a: 1}
   gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
   headerBarColor: {r: 0.45, g: 0.45, b: 0.45, a: 0.9}
+  layerLabelText: Layer
 --- !u!4 &1141274996
 Transform:
   m_ObjectHideFlags: 0
@@ -2888,6 +2898,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  populateRandomOnStart: 1
   columns: 5
   rows: 2
   cellSize: {x: 90, y: 70}
@@ -2895,10 +2906,14 @@ MonoBehaviour:
   padding: {x: 20, y: 20}
   canvasScale: 0.015
   imageFolderName: collague_images
+  absoluteDatasetRoot: 
+  apiClient: {fileID: 0}
+  loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
   panelBackground: {r: 0.7, g: 0.7, b: 0.7, a: 1}
   cellBackground: {r: 1, g: 1, b: 1, a: 1}
   gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
   headerBarColor: {r: 0.45, g: 0.45, b: 0.45, a: 0.9}
+  layerLabelText: Layer
 --- !u!4 &1272238634
 Transform:
   m_ObjectHideFlags: 0
@@ -4299,6 +4314,79 @@ Transform:
   - {fileID: 660868867}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &9876543300
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 9876543301}
+  - component: {fileID: 9876543302}
+  - component: {fileID: 9876543303}
+  m_Layer: 0
+  m_Name: ClipSearch_Service
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &9876543301
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9876543300}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &9876543302
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9876543300}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d3696f83488b3a14bb6d331bf567ee4f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  baseUrl: http://127.0.0.1:8000
+  onSearchSuccess:
+    m_PersistentCalls:
+      m_Calls: []
+  onSearchError:
+    m_PersistentCalls:
+      m_Calls: []
+--- !u!114 &9876543303
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9876543300}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8f3a2c1d9e4b5a6789012345abcdef01, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  apiClient: {fileID: 9876543302}
+  panelStage90: {fileID: 231418494}
+  panelStage30: {fileID: 1141274995}
+  panelStage10: {fileID: 1272238633}
+  finalResultRawImage: {fileID: 0}
+  queryInput: {fileID: 0}
+  submitButton: {fileID: 0}
+  debugQuery: a brown labrador retriever
+  submitDebugQueryOnStart: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -4313,3 +4401,4 @@ SceneRoots:
   - {fileID: 1141274996}
   - {fileID: 1272238634}
   - {fileID: 1621290412}
+  - {fileID: 9876543301}
