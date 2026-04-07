@@ -10,25 +10,43 @@ Setup
    (torch and torchvision are pulled in automatically by CLIP.)
    If you don't have a CUDA GPU, replace faiss-gpu with faiss-cpu.
 
-3. Prepare the dataset (50 curated ImageNet-1K classes, ~50 000 images):
-       python download_imagenet50.py
-   Images go into  assets/StreamingAssets/collague_images/{classname}/{file}.JPEG
+   GPU embedding requires a CUDA-enabled PyTorch build (CLIP's default pip torch
+   is often CPU-only). Install the wheel that matches your CUDA version from:
+       https://pytorch.org/get-started/locally/
+   Then verify:  python -c "import torch; print(torch.cuda.is_available())"
+   Optional: set CLIP_DEVICE=cuda:0  or  CLIP_DEVICE=cpu  to override auto-detection.
+
+3. Prepare the dataset (Kaggle Dogs vs. Cats, ~25 000 images):
+       python download_dogs_vs_cats.py
+   Default image folder:  Assets/StreamingAssets/dogs_vs_cats/{cat,dog}/{file}.jpg
+   For faster Unity Editor startup, keep images OUTSIDE Assets, e.g.  <repo>/Data/dogs_vs_cats
+   and set:  set CLIP_IMAGE_ROOT=...\\Data\\dogs_vs_cats  (Windows) before python server.py
+   Match Unity: set ImageGridPanel \"Absolute dataset root\" to the same folder.
+   The server writes image_manifest.txt there so Unity can pick random images without scanning 25k files.
 
 4. Run the server (listens on 0.0.0.0:8000):
        python server.py
 
    First startup embeds all images with CLIP ViT-B/32 and caches the result to
-   clip_index.npy + clip_paths.json (5-10 min on GPU).
-   Subsequent startups load from cache in under 10 seconds.
+   clip_index.npy + clip_paths.json + clip_cache_meta.json (5-10 min on GPU).
+   Subsequent startups load from cache in under 10 seconds if the dataset
+   fingerprint matches; otherwise the index is rebuilt automatically.
+   Force a full rebuild:  set CLIP_FORCE_REBUILD=1  (or true/yes) in the environment.
 
 5. Open http://127.0.0.1:8000/ for a browser-based POC UI.
    API: POST /search, GET /images/…, GET /health.
+
+Stages 2–4 search the full FAISS index (not the prior stage subset), using the
+original text query fused with the mean embedding of all user-selected images
+as the query vector.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -47,11 +65,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _SERVER_DIR = Path(__file__).resolve().parent
-IMAGE_ROOT = _SERVER_DIR / "assets" / "StreamingAssets" / "collague_images"
+
+
+def _resolve_image_root() -> Path:
+    """Dataset folder. Set CLIP_IMAGE_ROOT to move images outside Unity/Assets (faster Editor loads)."""
+    env = os.environ.get("CLIP_IMAGE_ROOT", "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    return (_SERVER_DIR / "Assets" / "StreamingAssets" / "dogs_vs_cats").resolve()
+
+
+IMAGE_ROOT = _resolve_image_root()
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+IMAGE_MANIFEST_NAME = "image_manifest.txt"
 
 CACHE_EMBEDDINGS = _SERVER_DIR / "clip_index.npy"
 CACHE_PATHS = _SERVER_DIR / "clip_paths.json"
+CACHE_META = _SERVER_DIR / "clip_cache_meta.json"
+
+EMBEDDING_DIM = 512
 
 STAGE_SIZES = [90, 30, 10, 1]
 CLIP_MODEL_NAME = "ViT-B/32"
@@ -60,7 +92,40 @@ EMBED_BATCH_SIZE = 256
 # ---------------------------------------------------------------------------
 # Module-level state (populated at startup)
 # ---------------------------------------------------------------------------
-DEVICE: str = "cuda" if torch.cuda.is_available() else "cpu"
+def _resolve_torch_device() -> str:
+    """Use CUDA when available unless CLIP_DEVICE=cpu; allow CLIP_DEVICE=cuda:0 etc."""
+    raw = os.environ.get("CLIP_DEVICE", "").strip()
+    if raw:
+        if raw.lower() == "cpu":
+            return "cpu"
+        if raw.lower().startswith("cuda"):
+            if torch.cuda.is_available():
+                return raw
+            logger.warning(
+                "CLIP_DEVICE=%s requested but torch.cuda.is_available() is False; using cpu",
+                raw,
+            )
+            return "cpu"
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def _log_torch_cuda_diagnostics() -> None:
+    logger.info("PyTorch %s, torch.version.cuda=%s", torch.__version__, torch.version.cuda)
+    if torch.cuda.is_available():
+        logger.info(
+            "Using GPU: %s (CUDA %s)",
+            torch.cuda.get_device_name(0),
+            torch.version.cuda,
+        )
+    else:
+        logger.warning(
+            "CUDA not available to PyTorch — embeddings and search run on CPU. "
+            "Install a CUDA build from https://pytorch.org/get-started/locally/ "
+            "and ensure NVIDIA drivers are installed."
+        )
+
+
+DEVICE: str = _resolve_torch_device()
 CLIP_MODEL: Any = None
 CLIP_PREPROCESS: Any = None
 EMBEDDINGS: np.ndarray = np.empty((0, 512), dtype=np.float32)
@@ -136,34 +201,158 @@ def _embed_images(records: list[dict[str, str]]) -> np.ndarray:
     return emb
 
 
+def _fingerprint_records(records: list[dict[str, str]]) -> str:
+    """SHA-256 over sorted relative paths (stable across walk order)."""
+    if not records:
+        return hashlib.sha256(b"").hexdigest()
+    paths = sorted(rec["path"] for rec in records)
+    payload = "\n".join(paths).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _delete_clip_cache_files() -> None:
+    for p in (CACHE_EMBEDDINGS, CACHE_PATHS, CACHE_META):
+        try:
+            if p.exists():
+                p.unlink()
+                logger.info("Removed cache file %s", p)
+        except OSError as exc:
+            logger.warning("Could not remove %s: %s", p, exc)
+
+
+def _image_root_display() -> str:
+    root = IMAGE_ROOT.resolve()
+    try:
+        return str(root.relative_to(_SERVER_DIR))
+    except ValueError:
+        return str(root)
+
+
+def _write_image_manifest(records: list[dict[str, str]]) -> None:
+    """One relative path per line so Unity can sample without scanning the whole tree."""
+    if not records:
+        return
+    path = IMAGE_ROOT / IMAGE_MANIFEST_NAME
+    try:
+        IMAGE_ROOT.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            for rec in records:
+                f.write(rec["path"] + "\n")
+        logger.info("Wrote %s (%d paths) for fast Unity sampling", path.name, len(records))
+    except OSError as exc:
+        logger.warning("Could not write %s: %s", path, exc)
+
+
+def _save_cache_meta(fingerprint: str, record_count: int) -> None:
+    meta = {
+        "fingerprint": fingerprint,
+        "record_count": record_count,
+        "clip_model": CLIP_MODEL_NAME,
+        "image_root": _image_root_display(),
+    }
+    with open(CACHE_META, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+    logger.info("Wrote cache metadata to %s", CACHE_META)
+
+
+def _try_load_cache(
+    current_records: list[dict[str, str]], fp: str
+) -> tuple[np.ndarray, list[dict[str, str]]] | None:
+    if not (
+        CACHE_EMBEDDINGS.exists()
+        and CACHE_PATHS.exists()
+        and CACHE_META.exists()
+    ):
+        return None
+    try:
+        with open(CACHE_META, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Invalid cache meta (%s), rebuilding index", exc)
+        return None
+
+    if meta.get("fingerprint") != fp or meta.get("record_count") != len(current_records):
+        logger.warning(
+            "CLIP cache fingerprint mismatch or count changed (disk=%d meta=%r); rebuilding",
+            len(current_records),
+            meta.get("record_count"),
+        )
+        return None
+
+    with open(CACHE_PATHS, "r", encoding="utf-8") as f:
+        cached_records: list[dict[str, str]] = json.load(f)
+
+    if len(cached_records) != len(current_records):
+        logger.warning("clip_paths.json length mismatch; rebuilding")
+        return None
+
+    if _fingerprint_records(cached_records) != fp:
+        logger.warning("Cached paths do not match disk fingerprint; rebuilding")
+        return None
+
+    disk_paths = [r["path"] for r in current_records]
+    cache_paths = [r["path"] for r in cached_records]
+    if disk_paths != cache_paths:
+        logger.warning("Image path ordering differs from cache; rebuilding")
+        return None
+
+    emb = np.load(str(CACHE_EMBEDDINGS)).astype(np.float32)
+    if emb.shape != (len(cached_records), EMBEDDING_DIM):
+        logger.warning(
+            "Embedding matrix shape %s vs %d records; rebuilding",
+            emb.shape,
+            len(cached_records),
+        )
+        return None
+
+    return emb, cached_records
+
+
 def build_index() -> None:
     global EMBEDDINGS, IMAGE_RECORDS, RECORD_BY_ID, FAISS_INDEX, INDEX_BUILT
-    global CLIP_MODEL, CLIP_PREPROCESS
+    global CLIP_MODEL, CLIP_PREPROCESS, DEVICE
+
+    DEVICE = _resolve_torch_device()
+    _log_torch_cuda_diagnostics()
+
+    force = os.environ.get("CLIP_FORCE_REBUILD", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if force:
+        logger.info("CLIP_FORCE_REBUILD set — clearing embedding cache")
+        _delete_clip_cache_files()
 
     t0 = time.perf_counter()
     logger.info("Loading CLIP model %s on %s ...", CLIP_MODEL_NAME, DEVICE)
     CLIP_MODEL, CLIP_PREPROCESS = clip.load(CLIP_MODEL_NAME, device=DEVICE)
 
-    if CACHE_EMBEDDINGS.exists() and CACHE_PATHS.exists():
+    logger.info("Walking %s for images...", IMAGE_ROOT.resolve())
+    current_records = _walk_images()
+    fp = _fingerprint_records(current_records)
+
+    cached = _try_load_cache(current_records, fp)
+    if cached is not None:
         logger.info("Loading cached index from %s", CACHE_EMBEDDINGS)
-        EMBEDDINGS = np.load(str(CACHE_EMBEDDINGS)).astype(np.float32)
-        with open(CACHE_PATHS, "r", encoding="utf-8") as f:
-            IMAGE_RECORDS = json.load(f)
+        EMBEDDINGS, IMAGE_RECORDS = cached
+    elif not current_records:
+        logger.warning("No images found — index will be empty")
+        IMAGE_RECORDS = []
+        EMBEDDINGS = np.empty((0, EMBEDDING_DIM), dtype=np.float32)
     else:
-        logger.info("Walking %s for images...", IMAGE_ROOT.resolve())
-        IMAGE_RECORDS = _walk_images()
-        if not IMAGE_RECORDS:
-            logger.warning("No images found — index will be empty")
-            EMBEDDINGS = np.empty((0, 512), dtype=np.float32)
-        else:
-            logger.info("Embedding %d images (batch_size=%d)...", len(IMAGE_RECORDS), EMBED_BATCH_SIZE)
-            EMBEDDINGS = _embed_images(IMAGE_RECORDS)
-            np.save(str(CACHE_EMBEDDINGS), EMBEDDINGS)
-            with open(CACHE_PATHS, "w", encoding="utf-8") as f:
-                json.dump(IMAGE_RECORDS, f)
-            logger.info("Saved cache to %s and %s", CACHE_EMBEDDINGS, CACHE_PATHS)
+        logger.info("Embedding %d images (batch_size=%d)...", len(current_records), EMBED_BATCH_SIZE)
+        IMAGE_RECORDS = current_records
+        EMBEDDINGS = _embed_images(IMAGE_RECORDS)
+        np.save(str(CACHE_EMBEDDINGS), EMBEDDINGS)
+        with open(CACHE_PATHS, "w", encoding="utf-8") as f:
+            json.dump(IMAGE_RECORDS, f)
+        _save_cache_meta(fp, len(IMAGE_RECORDS))
+        logger.info("Saved cache to %s, %s, %s", CACHE_EMBEDDINGS, CACHE_PATHS, CACHE_META)
 
     RECORD_BY_ID = {rec["id"]: idx for idx, rec in enumerate(IMAGE_RECORDS)}
+
+    _write_image_manifest(IMAGE_RECORDS)
 
     FAISS_INDEX = faiss.IndexFlatIP(512)
     if len(EMBEDDINGS) > 0:
@@ -499,6 +688,10 @@ def health() -> dict[str, Any]:
         "image_count": len(IMAGE_RECORDS),
         "index_built": INDEX_BUILT,
         "cuda_available": torch.cuda.is_available(),
+        "model": CLIP_MODEL_NAME,
+        "image_root": _image_root_display(),
+        "stage_sizes": list(STAGE_SIZES),
+        "embedding_dim": EMBEDDING_DIM,
     }
 
 
@@ -514,7 +707,7 @@ def search(body: SearchRequest) -> SearchResponse:
         if stage == 1:
             return _search_stage1(body.query, k)
         else:
-            return _search_later_stage(stage, k, body.candidates, body.selected)
+            return _search_later_stage(stage, k, body.candidates, body.selected, body.query)
     except HTTPException:
         raise
     except Exception as exc:
@@ -522,12 +715,23 @@ def search(body: SearchRequest) -> SearchResponse:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-def _search_stage1(query: str, k: int) -> SearchResponse:
-    text_tokens = clip.tokenize([query]).to(DEVICE)
+def _encode_text_normalized(query: str) -> np.ndarray:
+    """Return L2-normalised text embedding, shape (1, EMBEDDING_DIM). Empty query -> zeros."""
+    text = (query or "").strip()
+    if not text:
+        return np.zeros((1, EMBEDDING_DIM), dtype=np.float32)
+    text_tokens = clip.tokenize([text]).to(DEVICE)
     with torch.no_grad():
         text_feat = CLIP_MODEL.encode_text(text_tokens)
-    text_feat = text_feat.cpu().numpy().astype(np.float32)
-    text_feat /= np.linalg.norm(text_feat, axis=1, keepdims=True)
+    out = text_feat.cpu().numpy().astype(np.float32)
+    norms = np.linalg.norm(out, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    out /= norms
+    return out
+
+
+def _search_stage1(query: str, k: int) -> SearchResponse:
+    text_feat = _encode_text_normalized(query)
 
     n_search = min(k, FAISS_INDEX.ntotal)
     if n_search == 0:
@@ -555,42 +759,18 @@ def _search_stage1(query: str, k: int) -> SearchResponse:
 
 
 def _search_later_stage(
-    stage: int, k: int, candidate_ids: list[str], selected_ids: list[str]
+    stage: int,
+    k: int,
+    candidate_ids: list[str],
+    selected_ids: list[str],
+    query: str,
 ) -> SearchResponse:
-    if not candidate_ids:
-        logger.warning("Stage %d: empty candidates, falling back to zero-vector search", stage)
-        n_search = min(k, FAISS_INDEX.ntotal)
-        if n_search == 0:
-            return SearchResponse(stage=stage, total=0, results=[])
-        qvec = np.zeros((1, 512), dtype=np.float32)
-        scores, indices = FAISS_INDEX.search(qvec, n_search)
-        uniform_p = round(1.0 / max(n_search, 1), 4)
-        results = []
-        for i in range(n_search):
-            idx = int(indices[0][i])
-            rec = IMAGE_RECORDS[idx]
-            results.append(
-                ResultRecord(
-                    id=rec["id"], path=rec["path"],
-                    category=rec["category"], probability=uniform_p,
-                )
-            )
-        return SearchResponse(stage=stage, total=len(results), results=results)
+    """Full-index search; `candidate_ids` kept for API compatibility (ignored)."""
+    _ = candidate_ids  # Unity / POC still send this field
 
-    valid_indices: list[int] = []
-    for cid in candidate_ids:
-        idx = RECORD_BY_ID.get(cid)
-        if idx is None:
-            logger.warning("Stage %d: unknown candidate id %r, skipping", stage, cid)
-            continue
-        valid_indices.append(idx)
+    t = _encode_text_normalized(query)
+    has_text = float(np.linalg.norm(t)) > 1e-8
 
-    if not valid_indices:
-        return SearchResponse(stage=stage, total=0, results=[])
-
-    cand_embeddings = EMBEDDINGS[valid_indices]  # (C, 512)
-
-    # Build anchor from user-selected images across prior stages
     sel_emb_indices: list[int] = []
     for sid in selected_ids:
         idx = RECORD_BY_ID.get(sid)
@@ -600,24 +780,61 @@ def _search_later_stage(
             logger.warning("Stage %d: unknown selected id %r, skipping", stage, sid)
 
     if sel_emb_indices:
-        anchor = EMBEDDINGS[sel_emb_indices].mean(axis=0, keepdims=True)
+        s = EMBEDDINGS[sel_emb_indices].mean(axis=0, keepdims=True).astype(np.float32)
+        sn = np.linalg.norm(s, axis=1, keepdims=True)
+        sn[sn == 0] = 1.0
+        s /= sn
+        has_sel = True
     else:
-        anchor = cand_embeddings[:min(5, len(valid_indices))].mean(axis=0, keepdims=True)
+        s = np.zeros((1, EMBEDDING_DIM), dtype=np.float32)
+        has_sel = False
+        if has_text:
+            logger.warning("Stage %d: empty selected list; using text-only full-index search", stage)
 
-    norm = np.linalg.norm(anchor, axis=1, keepdims=True)
-    norm[norm == 0] = 1.0
-    anchor /= norm
+    if has_text and has_sel:
+        qvec = (t + s) / 2.0
+    elif has_text:
+        qvec = t
+    elif has_sel:
+        qvec = s
+    else:
+        logger.warning(
+            "Stage %d: no text and no valid selections; zero-vector full-index search (uniform tie-break)",
+            stage,
+        )
+        qvec = np.zeros((1, EMBEDDING_DIM), dtype=np.float32)
 
-    cosine_scores = (cand_embeddings @ anchor.T).squeeze()  # (C,)
-    if cosine_scores.ndim == 0:
-        cosine_scores = cosine_scores.reshape(1)
+    qn = np.linalg.norm(qvec, axis=1, keepdims=True)
+    qn[qn == 0] = 1.0
+    qvec = qvec / qn
 
-    order, probs = rank_by_softmax(cosine_scores)
+    n_search = min(k, FAISS_INDEX.ntotal)
+    if n_search == 0:
+        return SearchResponse(stage=stage, total=0, results=[])
+
+    scores, indices = FAISS_INDEX.search(qvec, n_search)
+    scores = scores[0]
+    indices = indices[0]
+
+    if not has_text and not has_sel:
+        uniform_p = round(1.0 / max(n_search, 1), 4)
+        results = [
+            ResultRecord(
+                id=IMAGE_RECORDS[int(indices[i])]["id"],
+                path=IMAGE_RECORDS[int(indices[i])]["path"],
+                category=IMAGE_RECORDS[int(indices[i])]["category"],
+                probability=uniform_p,
+            )
+            for i in range(n_search)
+        ]
+        return SearchResponse(stage=stage, total=len(results), results=results)
+
+    order, probs = rank_by_softmax(scores)
 
     results: list[ResultRecord] = []
-    for rank_pos in range(min(k, len(order))):
-        orig_idx = valid_indices[order[rank_pos]]
-        rec = IMAGE_RECORDS[orig_idx]
+    for rank_pos in range(len(order)):
+        idx = int(indices[order[rank_pos]])
+        rec = IMAGE_RECORDS[idx]
         results.append(
             ResultRecord(
                 id=rec["id"],
