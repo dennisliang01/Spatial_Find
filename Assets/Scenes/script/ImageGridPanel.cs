@@ -64,6 +64,10 @@ namespace Scenes.script
         readonly List<CellSlot> _cells = new List<CellSlot>();
         TextMeshProUGUI _layerLabel;
         RectTransform _gridLayoutRoot;
+        RectTransform _headerBarRT;
+        Button _headerNavigateButton;
+        int _navStageIndex;
+        Action<int> _onHeaderNavigateClicked;
         bool _shellBuilt;
 
         void Awake()
@@ -87,6 +91,77 @@ namespace Scenes.script
         {
             if (_layerLabel != null)
                 _layerLabel.text = text ?? "";
+        }
+
+        /// <summary>
+        /// Makes the header bar clickable to jump back to this CLIP stage (1–4) in <see cref="ClipSearchFlowController"/>.
+        /// Pass stage 0 or null callback to remove.
+        /// </summary>
+        public void SetNavigateBackCallback(int clipSearchStageIndex, Action<int> onHeaderNavigateClicked)
+        {
+            _navStageIndex = clipSearchStageIndex;
+            _onHeaderNavigateClicked = onHeaderNavigateClicked;
+            BuildShellIfNeeded();
+            TryFindHeaderBarTransform();
+            EnsureHeaderNavigateButton();
+        }
+
+        void TryFindHeaderBarTransform()
+        {
+            if (_headerBarRT != null)
+                return;
+            Transform t = transform.Find("ImageGrid_Canvas/PanelBG/HeaderBar");
+            if (t != null)
+                _headerBarRT = t.GetComponent<RectTransform>();
+        }
+
+        void EnsureHeaderNavigateButton()
+        {
+            if (_headerBarRT == null)
+                return;
+
+            if (_navStageIndex <= 0 || _onHeaderNavigateClicked == null)
+            {
+                if (_headerNavigateButton != null)
+                {
+                    Destroy(_headerNavigateButton.gameObject);
+                    _headerNavigateButton = null;
+                }
+
+                return;
+            }
+
+            if (_headerNavigateButton != null)
+            {
+                _headerNavigateButton.onClick.RemoveAllListeners();
+                _headerNavigateButton.onClick.AddListener(() => _onHeaderNavigateClicked(_navStageIndex));
+                return;
+            }
+
+            GameObject hitGo = CreateUIElement("StageNavigateHit", _headerBarRT.transform);
+            hitGo.transform.SetAsLastSibling();
+            RectTransform hitRt = hitGo.GetComponent<RectTransform>();
+            StretchFill(hitRt);
+            Image hitImg = hitGo.AddComponent<Image>();
+            hitImg.color = new Color(1f, 1f, 1f, 0.02f);
+            hitImg.raycastTarget = true;
+            Button btn = hitGo.AddComponent<Button>();
+            btn.targetGraphic = hitImg;
+            btn.transition = Selectable.Transition.None;
+            _headerNavigateButton = btn;
+            btn.onClick.AddListener(() => _onHeaderNavigateClicked(_navStageIndex));
+            hitGo.AddComponent<BoxCollider>();
+            StartCoroutine(ResyncHeaderNavigateColliderNextFrame(hitRt));
+        }
+
+        IEnumerator ResyncHeaderNavigateColliderNextFrame(RectTransform hitRt)
+        {
+            yield return null;
+            if (hitRt == null)
+                yield break;
+            BoxCollider box = hitRt.GetComponent<BoxCollider>();
+            if (box != null)
+                SyncUiCellCollider(hitRt, box);
         }
 
         public void SetSelectionEnabled(bool enabled)
@@ -120,6 +195,16 @@ namespace Scenes.script
 
                 ClipResultRecordDto rec = safe[i];
                 _cells[i].ImageId = rec.id;
+
+                // Set the ImageTile imageId so PCInputController can retrieve it on mouse click.
+                if (_cells[i].Raw != null)
+                {
+                    ImageTile imageTile = _cells[i].Raw.GetComponent<ImageTile>();
+                    if (imageTile != null)
+                    {
+                        imageTile.imageId = rec.id;
+                    }
+                }
 
                 string localPath = TryResolveLocalFile(rec.path);
                 if (!string.IsNullOrEmpty(localPath))
@@ -231,18 +316,21 @@ namespace Scenes.script
             headerRT.anchoredPosition = Vector2.zero;
             Image headerImg = headerGO.AddComponent<Image>();
             headerImg.color = headerBarColor;
+            _headerBarRT = headerRT;
 
             GameObject instrGO = CreateUIElement("InstructionText", headerGO.transform);
             RectTransform instrRT = instrGO.GetComponent<RectTransform>();
             StretchFill(instrRT);
             instrRT.offsetMin = new Vector2(120f, 0);
             instrRT.offsetMax = new Vector2(-20f, 0);
-            TextMeshProUGUI instrTMP = instrGO.AddComponent<TextMeshProUGUI>();
-            instrTMP.text = "Select the Image closest to what you are looking for.";
-            instrTMP.fontSize = 20;
-            instrTMP.color = Color.white;
-            instrTMP.alignment = TextAlignmentOptions.Center;
-            instrTMP.enableWordWrapping = true;
+
+            // Remove label text for now to save space; the layer label already indicates what to pick, and instructions were too long to fit legibly.
+            // TextMeshProUGUI instrTMP = instrGO.AddComponent<TextMeshProUGUI>();
+            // instrTMP.text = "Select the Image closest to what you are looking for.";
+            // instrTMP.fontSize = 20;
+            // instrTMP.color = Color.white;
+            // instrTMP.alignment = TextAlignmentOptions.Center;
+            // instrTMP.enableWordWrapping = true;
 
             GameObject labelGO = CreateUIElement("FirstLayerLabel", panelGO.transform);
             RectTransform labelRT = labelGO.GetComponent<RectTransform>();
@@ -257,6 +345,7 @@ namespace Scenes.script
             _layerLabel.color = new Color(0.75f, 0.75f, 0.75f, 1f);
             _layerLabel.alignment = TextAlignmentOptions.Left;
             _layerLabel.fontStyle = FontStyles.Italic;
+            _layerLabel.raycastTarget = false;
 
             GameObject gridBgGO = CreateUIElement("GridBG", panelGO.transform);
             RectTransform gridBgRT = gridBgGO.GetComponent<RectTransform>();
@@ -301,6 +390,9 @@ namespace Scenes.script
                 var box = cellGO.AddComponent<BoxCollider>();
                 box.isTrigger = false;
 
+                // Add ImageTile component so PCInputController can retrieve the image ID on mouse click.
+                cellGO.AddComponent<ImageTile>();
+
                 _cells.Add(new CellSlot { Raw = rawImg, Btn = btn, ImageId = null, OwnedTexture = null });
             }
 
@@ -311,6 +403,7 @@ namespace Scenes.script
 
             _shellBuilt = true;
             Debug.Log($"[ImageGridPanel] Built shell {columns}x{rows} on {name}.");
+            EnsureHeaderNavigateButton();
         }
 
         /// <summary>

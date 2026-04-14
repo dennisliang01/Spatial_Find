@@ -85,7 +85,7 @@ CACHE_META = _SERVER_DIR / "clip_cache_meta.json"
 
 EMBEDDING_DIM = 512
 
-STAGE_SIZES = [90, 30, 10, 1]
+STAGE_SIZES = [90, 30, 10, 3, 1]
 CLIP_MODEL_NAME = "ViT-B/32"
 EMBED_BATCH_SIZE = 256
 
@@ -371,7 +371,7 @@ def build_index() -> None:
 # ---------------------------------------------------------------------------
 class SearchRequest(BaseModel):
     query: str
-    stage: int = Field(ge=1, le=4)
+    stage: int = Field(ge=1, le=5)
     candidates: list[str] = Field(default_factory=list)
     selected: list[str] = Field(default_factory=list)
 
@@ -446,6 +446,7 @@ _POC_UI_HTML = """<!DOCTYPE html>
     <div class="dot" id="dot2"></div>
     <div class="dot" id="dot3"></div>
     <div class="dot" id="dot4"></div>
+    <div class="dot" id="dot5"></div>
   </div>
   <p class="meta" id="stageInfo"></p>
 
@@ -468,7 +469,8 @@ _POC_UI_HTML = """<!DOCTYPE html>
   </div>
 
   <script>
-    const STAGE_SIZES = [90, 30, 10, 1];
+    const STAGE_SIZES = [90, 30, 10, 3, 1];
+    const FINAL_STAGE = 5;
     let state = { query: "", stage: 0, candidates: [], results: [], selected: [] };
     let advancing = false;
 
@@ -490,7 +492,7 @@ _POC_UI_HTML = """<!DOCTYPE html>
     }
 
     function updateStageBar() {
-      for (let i = 1; i <= 4; i++) {
+      for (let i = 1; i <= FINAL_STAGE; i++) {
         const dot = document.getElementById("dot" + i);
         dot.className = "dot";
         if (i < state.stage) dot.classList.add("done");
@@ -498,13 +500,13 @@ _POC_UI_HTML = """<!DOCTYPE html>
       }
       const info = document.getElementById("stageInfo");
       if (state.stage === 0) {
-        info.textContent = "Enter a query to start (4 stages: 90 \\u2192 30 \\u2192 10 \\u2192 1).";
-      } else if (state.stage <= 3) {
-        info.textContent = "Stage " + state.stage + " of 4 \\u2014 showing " +
+        info.textContent = "Enter a query to start (5 stages: 90 \\u2192 30 \\u2192 10 \\u2192 3 \\u2192 1).";
+      } else if (state.stage < FINAL_STAGE) {
+        info.textContent = "Stage " + state.stage + " of " + FINAL_STAGE + " \\u2014 showing " +
           state.results.length + " results. Click an image to refine (" +
           STAGE_SIZES[state.stage] + " next).";
       } else {
-        info.textContent = "Stage 4 \\u2014 final result.";
+        info.textContent = "Stage " + FINAL_STAGE + " \\u2014 final result.";
       }
     }
 
@@ -576,7 +578,7 @@ _POC_UI_HTML = """<!DOCTYPE html>
     }
 
     async function pickImage(id) {
-      if (advancing || state.stage < 1 || state.stage >= 4) return;
+      if (advancing || state.stage < 1 || state.stage >= FINAL_STAGE) return;
       advancing = true;
 
       state.selected.push(id);
@@ -590,7 +592,7 @@ _POC_UI_HTML = """<!DOCTYPE html>
         state.results = data.results;
         state.candidates = data.results.map(r => r.id);
         updateStageBar();
-        if (nextStage >= 4) {
+        if (nextStage >= FINAL_STAGE) {
           document.getElementById("controls").style.display = "none";
           document.getElementById("out").innerHTML = "";
           document.getElementById("heroDone").style.display = "";

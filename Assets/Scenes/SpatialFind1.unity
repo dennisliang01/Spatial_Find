@@ -371,7 +371,6 @@ GameObject:
   m_Component:
   - component: {fileID: 231418495}
   - component: {fileID: 231418494}
-  - component: {fileID: 231418496}
   m_Layer: 0
   m_Name: ImageGridPanel_90
   m_TagString: Untagged
@@ -402,11 +401,11 @@ MonoBehaviour:
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
-  panelBackground: {r: 0.7, g: 0.7, b: 0.7, a: 1}
+  panelBackground: {r: 0, g: 0, b: 0, a: 1}
   cellBackground: {r: 1, g: 1, b: 1, a: 1}
   gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
-  headerBarColor: {r: 0.45, g: 0.45, b: 0.45, a: 0.9}
-  layerLabelText: Layer
+  headerBarColor: {r: 0, g: 0, b: 0, a: 1}
+  layerLabelText: Stage 1
 --- !u!4 &231418495
 Transform:
   m_ObjectHideFlags: 0
@@ -422,28 +421,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!64 &231418496
-MeshCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 231418493}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 5
-  m_Convex: 0
-  m_CookingOptions: 30
-  m_Mesh: {fileID: 0}
 --- !u!1 &415531241
 GameObject:
   m_ObjectHideFlags: 0
@@ -2534,6 +2511,66 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 831721485}
   m_Mesh: {fileID: 4673940705304139746, guid: b79fd1ec73e7a1c408a2581c78ac350f, type: 3}
+--- !u!1 &908308115
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 908308117}
+  - component: {fileID: 908308116}
+  m_Layer: 0
+  m_Name: ImageGridPanel_1
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &908308116
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 908308115}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  populateRandomOnStart: 1
+  columns: 1
+  rows: 1
+  cellSize: {x: 180, y: 140}
+  spacing: {x: 10, y: 10}
+  padding: {x: 20, y: 20}
+  canvasScale: 0.015
+  imageFolderName: collague_images
+  absoluteDatasetRoot: 
+  apiClient: {fileID: 0}
+  loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
+  panelBackground: {r: 0, g: 0, b: 0, a: 1}
+  cellBackground: {r: 1, g: 1, b: 1, a: 1}
+  gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  headerBarColor: {r: 0, g: 0, b: 0, a: 1}
+  layerLabelText: Stage 5
+--- !u!4 &908308117
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 908308115}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.1175997, z: 4}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &954463032
 GameObject:
   m_ObjectHideFlags: 0
@@ -2715,7 +2752,7 @@ MonoBehaviour:
   populateRandomOnStart: 1
   columns: 6
   rows: 5
-  cellSize: {x: 90, y: 70}
+  cellSize: {x: 100, y: 80}
   spacing: {x: 10, y: 10}
   padding: {x: 20, y: 20}
   canvasScale: 0.015
@@ -2723,11 +2760,11 @@ MonoBehaviour:
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
-  panelBackground: {r: 0.7, g: 0.7, b: 0.7, a: 1}
+  panelBackground: {r: 0, g: 0, b: 0, a: 1}
   cellBackground: {r: 1, g: 1, b: 1, a: 1}
   gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
-  headerBarColor: {r: 0.45, g: 0.45, b: 0.45, a: 0.9}
-  layerLabelText: Layer
+  headerBarColor: {r: 0, g: 0, b: 0, a: 1}
+  layerLabelText: Stage 2
 --- !u!4 &1141274996
 Transform:
   m_ObjectHideFlags: 0
@@ -2737,7 +2774,7 @@ Transform:
   m_GameObject: {fileID: 1141274994}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.1175997, z: 20}
+  m_LocalPosition: {x: 0, y: 1.1175997, z: 16}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -2927,16 +2964,16 @@ MonoBehaviour:
   cellSize: {x: 90, y: 70}
   spacing: {x: 10, y: 10}
   padding: {x: 20, y: 20}
-  canvasScale: 0.015
+  canvasScale: 0.02
   imageFolderName: collague_images
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
-  panelBackground: {r: 0.7, g: 0.7, b: 0.7, a: 1}
+  panelBackground: {r: 0, g: 0, b: 0, a: 1}
   cellBackground: {r: 1, g: 1, b: 1, a: 1}
   gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
-  headerBarColor: {r: 0.45, g: 0.45, b: 0.45, a: 0.9}
-  layerLabelText: Layer
+  headerBarColor: {r: 0, g: 0, b: 0, a: 1}
+  layerLabelText: Stage 3
 --- !u!4 &1272238634
 Transform:
   m_ObjectHideFlags: 0
@@ -2946,7 +2983,7 @@ Transform:
   m_GameObject: {fileID: 1272238632}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.1175997, z: 20}
+  m_LocalPosition: {x: 0, y: 1.1175997, z: 12}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3209,6 +3246,11 @@ PrefabInstance:
         type: 3}
       propertyPath: m_Name
       value: XR Device Simulator
+      objectReference: {fileID: 0}
+    - target: {fileID: 6598815579406187037, guid: 18ddb545287c546e19cc77dc9fbb2189,
+        type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -3994,6 +4036,66 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1976693944}
   m_Mesh: {fileID: 4529524283109666172, guid: b79fd1ec73e7a1c408a2581c78ac350f, type: 3}
+--- !u!1 &1996417259
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1996417261}
+  - component: {fileID: 1996417260}
+  m_Layer: 0
+  m_Name: ImageGridPanel_3
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &1996417260
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1996417259}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  populateRandomOnStart: 1
+  columns: 3
+  rows: 1
+  cellSize: {x: 150, y: 130}
+  spacing: {x: 10, y: 10}
+  padding: {x: 20, y: 20}
+  canvasScale: 0.015
+  imageFolderName: collague_images
+  absoluteDatasetRoot: 
+  apiClient: {fileID: 0}
+  loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
+  panelBackground: {r: 0, g: 0, b: 0, a: 1}
+  cellBackground: {r: 1, g: 1, b: 1, a: 1}
+  gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  headerBarColor: {r: 0, g: 0, b: 0, a: 1}
+  layerLabelText: Stage 4
+--- !u!4 &1996417261
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1996417259}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.1175997, z: 8}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2006180582
 GameObject:
   m_ObjectHideFlags: 0
@@ -4405,11 +4507,15 @@ MonoBehaviour:
   panelStage90: {fileID: 231418494}
   panelStage30: {fileID: 1141274995}
   panelStage10: {fileID: 1272238633}
+  panelStage3: {fileID: 1996417260}
+  panelStage1: {fileID: 908308116}
   finalResultRawImage: {fileID: 0}
   queryInput: {fileID: 0}
   submitButton: {fileID: 0}
-  debugQuery: a brown labrador retriever
+  debugQuery: An orange cat
   submitDebugQueryOnStart: 1
+  initialPromptPanel: {fileID: 0}
+  stageDepthStep: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -4423,5 +4529,7 @@ SceneRoots:
   - {fileID: 231418495}
   - {fileID: 1141274996}
   - {fileID: 1272238634}
+  - {fileID: 1996417261}
+  - {fileID: 908308117}
   - {fileID: 1621290412}
   - {fileID: 9876543301}
