@@ -63,6 +63,7 @@ namespace Scenes.script
 
         readonly List<CellSlot> _cells = new List<CellSlot>();
         TextMeshProUGUI _layerLabel;
+        RectTransform _gridLayoutRoot;
         bool _shellBuilt;
 
         void Awake()
@@ -269,6 +270,7 @@ namespace Scenes.script
 
             GameObject gridGO = CreateUIElement("GridContainer", gridBgGO.transform);
             RectTransform gridRT = gridGO.GetComponent<RectTransform>();
+            _gridLayoutRoot = gridRT;
             StretchFill(gridRT);
             gridRT.offsetMin = new Vector2(spacing.x * 0.5f, spacing.y * 0.5f);
             gridRT.offsetMax = new Vector2(-spacing.x * 0.5f, -spacing.y * 0.5f);
@@ -294,11 +296,56 @@ namespace Scenes.script
                 btn.targetGraphic = rawImg;
                 btn.transition = Selectable.Transition.None;
 
+                // Physics raycasts (e.g. WorkingController) need a collider aligned to the RectTransform.
+                // Unity does not size BoxCollider from UI layout; Vector3.one stays 1×1 in local units and misses the visible cell.
+                var box = cellGO.AddComponent<BoxCollider>();
+                box.isTrigger = false;
+
                 _cells.Add(new CellSlot { Raw = rawImg, Btn = btn, ImageId = null, OwnedTexture = null });
             }
 
+            LayoutRebuilder.ForceRebuildLayoutImmediate(gridRT);
+            Canvas.ForceUpdateCanvases();
+            ResyncCellPhysicsColliders();
+            StartCoroutine(ResyncCellPhysicsCollidersNextFrame());
+
             _shellBuilt = true;
             Debug.Log($"[ImageGridPanel] Built shell {columns}x{rows} on {name}.");
+        }
+
+        /// <summary>
+        /// Recomputes each cell BoxCollider from its RectTransform after layout (safe to call if grid changes).
+        /// </summary>
+        public void ResyncCellPhysicsColliders()
+        {
+            foreach (CellSlot slot in _cells)
+            {
+                if (slot.Raw == null)
+                    continue;
+                var rt = slot.Raw.rectTransform;
+                var box = slot.Raw.GetComponent<BoxCollider>();
+                SyncUiCellCollider(rt, box);
+            }
+        }
+
+        IEnumerator ResyncCellPhysicsCollidersNextFrame()
+        {
+            yield return null;
+            if (_gridLayoutRoot != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_gridLayoutRoot);
+            Canvas.ForceUpdateCanvases();
+            ResyncCellPhysicsColliders();
+        }
+
+        static void SyncUiCellCollider(RectTransform rt, BoxCollider box)
+        {
+            if (rt == null || box == null)
+                return;
+
+            Rect r = rt.rect;
+            float depth = Mathf.Max(4f, Mathf.Min(Mathf.Max(r.width, 0.01f), Mathf.Max(r.height, 0.01f)) * 0.08f);
+            box.center = new Vector3(r.center.x, r.center.y, 0f);
+            box.size = new Vector3(Mathf.Max(r.width, 0.01f), Mathf.Max(r.height, 0.01f), depth);
         }
 
         void ClearCell(CellSlot slot)
