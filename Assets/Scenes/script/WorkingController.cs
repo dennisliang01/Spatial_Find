@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit;
 using System.Collections.Generic;
 
 namespace Scenes.script
@@ -14,6 +15,15 @@ namespace Scenes.script
         {
             try
             {
+                // XRInteractorLineVisual owns the LineRenderer on this object; do not replace it.
+                if (GetComponent<XRInteractorLineVisual>() != null)
+                {
+                    laser = null;
+                    Debug.Log((isLeftController ? "Left" : "Right") +
+                        " WorkingController: using XRInteractorLineVisual ray (custom laser skipped).");
+                    return;
+                }
+
                 laser = GetComponent<LineRenderer>();
                 if (laser == null)
                     laser = gameObject.AddComponent<LineRenderer>();
