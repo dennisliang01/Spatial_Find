@@ -6,6 +6,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 using TMPro;
 
 namespace Scenes.script
@@ -37,6 +38,12 @@ namespace Scenes.script
         [Header("API thumbnails")]
         [Tooltip("Used for HTTP fallback when the file is not under the local dataset root.")]
         public ClipSearchApiClient apiClient;
+
+        /// <summary>
+        /// CLIP flow stage for this panel (1 = 90-tile, 2 = 30…, 5 = final 1×1). 0 = not wired.
+        /// Set by <see cref="ClipSearchFlowController"/> so clicks on this panel can jump back.
+        /// </summary>
+        public int clipSearchStageIndex { get; private set; }
 
         [Tooltip("Cell tint while downloading over HTTP.")]
         public Color loadingCellColor = new Color(0.82f, 0.82f, 0.84f, 1f);
@@ -91,6 +98,12 @@ namespace Scenes.script
         {
             if (_layerLabel != null)
                 _layerLabel.text = text ?? "";
+        }
+
+        /// <summary>Registers which CLIP stage this grid represents (1–5). Use 0 for local-only grids.</summary>
+        public void SetClipSearchStage(int stage)
+        {
+            clipSearchStageIndex = Mathf.Clamp(stage, 0, 5);
         }
 
         /// <summary>
@@ -166,18 +179,26 @@ namespace Scenes.script
 
         public void SetSelectionEnabled(bool enabled)
         {
+            bool cellsPickable = enabled;
             foreach (CellSlot slot in _cells)
             {
                 if (slot.Btn == null)
                     continue;
-                slot.Btn.interactable = enabled && !string.IsNullOrEmpty(slot.ImageId);
+                bool on = cellsPickable && !string.IsNullOrEmpty(slot.ImageId);
+                slot.Btn.interactable = on;
+                if (slot.Raw != null)
+                    slot.Raw.raycastTarget = on;
             }
         }
 
         /// <summary>
         /// Clears textures and click handlers; optionally loads thumbnails from disk or <see cref="apiClient"/>.
         /// </summary>
-        public IEnumerator PopulateFromApiResults(ClipResultRecordDto[] results, Action<string> onCellPicked)
+        /// <param name="reuseLoadedThumbnailsWithoutNetwork">
+        /// When true (e.g. restoring after navigate-back), keeps cells that already show the same image id
+        /// and skips HTTP; only disk fallback is used for missing textures.
+        /// </param>
+        public IEnumerator PopulateFromApiResults(ClipResultRecordDto[] results, Action<string> onCellPicked, bool reuseLoadedThumbnailsWithoutNetwork = false)
         {
             if (!_shellBuilt)
                 BuildShellIfNeeded();
@@ -186,24 +207,40 @@ namespace Scenes.script
 
             for (int i = 0; i < _cells.Count; i++)
             {
-                ClearCell(_cells[i]);
                 if (i >= safe.Length)
                 {
+                    ClearCell(_cells[i]);
                     WirePick(_cells[i], null, null);
                     continue;
                 }
 
                 ClipResultRecordDto rec = safe[i];
+
+                if (reuseLoadedThumbnailsWithoutNetwork
+                    && !string.IsNullOrEmpty(rec.id)
+                    && string.Equals(_cells[i].ImageId, rec.id, StringComparison.Ordinal)
+                    && _cells[i].Raw != null
+                    && _cells[i].Raw.texture != null)
+                {
+                    if (_cells[i].Raw != null)
+                    {
+                        ImageTile imageTile = _cells[i].Raw.GetComponent<ImageTile>();
+                        if (imageTile != null)
+                            imageTile.imageId = rec.id;
+                    }
+
+                    WirePick(_cells[i], rec.id, onCellPicked);
+                    continue;
+                }
+
+                ClearCell(_cells[i]);
                 _cells[i].ImageId = rec.id;
 
-                // Set the ImageTile imageId so PCInputController can retrieve it on mouse click.
                 if (_cells[i].Raw != null)
                 {
                     ImageTile imageTile = _cells[i].Raw.GetComponent<ImageTile>();
                     if (imageTile != null)
-                    {
                         imageTile.imageId = rec.id;
-                    }
                 }
 
                 string localPath = TryResolveLocalFile(rec.path);
@@ -216,7 +253,7 @@ namespace Scenes.script
                         _cells[i].OwnedTexture = tex;
                     }
                 }
-                else if (apiClient != null && !string.IsNullOrEmpty(rec.path))
+                else if (!reuseLoadedThumbnailsWithoutNetwork && apiClient != null && !string.IsNullOrEmpty(rec.path))
                 {
                     _cells[i].Raw.color = loadingCellColor;
                     string url = apiClient.GetImageUrl(rec.path);
@@ -293,7 +330,7 @@ namespace Scenes.script
             canvas.sortingOrder = 1;
 
             canvasGO.AddComponent<CanvasScaler>();
-            canvasGO.AddComponent<GraphicRaycaster>();
+            canvasGO.AddComponent<TrackedDeviceGraphicRaycaster>();
 
             RectTransform canvasRT = canvasGO.GetComponent<RectTransform>();
             canvasRT.sizeDelta = new Vector2(totalWidth, totalHeight);
@@ -306,6 +343,7 @@ namespace Scenes.script
             StretchFill(panelRT);
             Image panelImg = panelGO.AddComponent<Image>();
             panelImg.color = panelBackground;
+            panelImg.raycastTarget = false;
 
             GameObject headerGO = CreateUIElement("HeaderBar", panelGO.transform);
             RectTransform headerRT = headerGO.GetComponent<RectTransform>();
@@ -316,6 +354,7 @@ namespace Scenes.script
             headerRT.anchoredPosition = Vector2.zero;
             Image headerImg = headerGO.AddComponent<Image>();
             headerImg.color = headerBarColor;
+            headerImg.raycastTarget = false;
             _headerBarRT = headerRT;
 
             GameObject instrGO = CreateUIElement("InstructionText", headerGO.transform);
@@ -356,6 +395,7 @@ namespace Scenes.script
             gridBgRT.anchoredPosition = new Vector2(0, -(headerHeight + padding.y - spacing.y * 0.5f));
             Image gridBgImg = gridBgGO.AddComponent<Image>();
             gridBgImg.color = gridBackground;
+            gridBgImg.raycastTarget = false;
 
             GameObject gridGO = CreateUIElement("GridContainer", gridBgGO.transform);
             RectTransform gridRT = gridGO.GetComponent<RectTransform>();
@@ -456,6 +496,7 @@ namespace Scenes.script
             {
                 slot.Raw.texture = null;
                 slot.Raw.color = cellBackground;
+                slot.Raw.raycastTarget = false;
             }
 
             slot.ImageId = null;
@@ -470,10 +511,14 @@ namespace Scenes.script
             if (string.IsNullOrEmpty(id) || onCellPicked == null)
             {
                 slot.Btn.interactable = false;
+                if (slot.Raw != null)
+                    slot.Raw.raycastTarget = false;
                 return;
             }
 
             slot.Btn.interactable = true;
+            if (slot.Raw != null)
+                slot.Raw.raycastTarget = true;
             string captured = id;
             slot.Btn.onClick.AddListener(() => onCellPicked(captured));
         }

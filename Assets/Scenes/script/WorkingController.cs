@@ -8,8 +8,19 @@ namespace Scenes.script
     public class WorkingController : MonoBehaviour
     {
         public bool isLeftController = true;
+
+        [SerializeField]
+        [Tooltip("If unset, resolved once at runtime (same flow as PCInputController).")]
+        private ClipSearchFlowController clipSearchFlowController;
+
         private LineRenderer laser;
         private bool triggerWasPressed = false;
+
+        void Awake()
+        {
+            if (clipSearchFlowController == null)
+                clipSearchFlowController = FindObjectOfType<ClipSearchFlowController>();
+        }
 
         void Start()
         {
@@ -273,11 +284,29 @@ namespace Scenes.script
                 {
                     meshController.RemoveChildPlane();
                 }
+                return;
             }
-            else
+
+            ImageTile imageTile = hitObject.GetComponent<ImageTile>();
+            if (imageTile == null)
+                imageTile = hitObject.GetComponentInParent<ImageTile>();
+
+            if (imageTile != null && !string.IsNullOrEmpty(imageTile.imageId))
             {
-                Debug.LogWarning($"No MeshController found on {hitObject.name}");
+                if (clipSearchFlowController != null)
+                {
+                    ImageGridPanel grid = imageTile.GetComponentInParent<ImageGridPanel>();
+                    clipSearchFlowController.OnUserPickedImageFromPanel(grid, imageTile.imageId);
+                }
+                else
+                {
+                    Debug.LogWarning("WorkingController: ClipSearchFlowController not found; cannot select image.");
+                }
+
+                return;
             }
+
+            Debug.LogWarning($"No MeshController or ImageTile on {hitObject.name}");
         }
 
         InputDevice GetInputDevice()

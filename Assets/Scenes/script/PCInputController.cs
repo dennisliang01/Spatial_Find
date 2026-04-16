@@ -52,7 +52,8 @@ namespace Scenes.script
 
                 if (imageTile != null && !string.IsNullOrEmpty(imageTile.imageId))
                 {
-                    clipSearchFlowController.OnUserPickedImage(imageTile.imageId);
+                    ImageGridPanel grid = imageTile.GetComponentInParent<ImageGridPanel>();
+                    clipSearchFlowController.OnUserPickedImageFromPanel(grid, imageTile.imageId);
                     return; // Only process the closest hit
                 }
             }

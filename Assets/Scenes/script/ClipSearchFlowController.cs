@@ -180,21 +180,78 @@ namespace Scenes.script
         void WireStageHeaderNavigation()
         {
             if (panelStage90 != null)
+            {
+                panelStage90.SetClipSearchStage(1);
                 panelStage90.SetNavigateBackCallback(1, OnStageHeaderNavigate);
+            }
+
             if (panelStage30 != null)
+            {
+                panelStage30.SetClipSearchStage(2);
                 panelStage30.SetNavigateBackCallback(2, OnStageHeaderNavigate);
+            }
+
             if (panelStage10 != null)
+            {
+                panelStage10.SetClipSearchStage(3);
                 panelStage10.SetNavigateBackCallback(3, OnStageHeaderNavigate);
+            }
+
             if (panelStage3 != null)
+            {
+                panelStage3.SetClipSearchStage(4);
                 panelStage3.SetNavigateBackCallback(4, OnStageHeaderNavigate);
-            // Final 1×1 panel is not a "back to this stage" target; earlier headers still work from the final view.
+            }
+
+            // Final 1×1: no header "back" target, but still tagged as stage 5 for click-to-navigate-back.
             if (panelStage1 != null)
+            {
+                panelStage1.SetClipSearchStage(5);
                 panelStage1.SetNavigateBackCallback(0, null);
+            }
         }
 
         void OnStageHeaderNavigate(int stage)
         {
             RequestNavigateBackToStage(stage);
+        }
+
+        int PanelStageFromPanel(ImageGridPanel p)
+        {
+            if (p == null)
+                return 0;
+            if (p == panelStage90)
+                return 1;
+            if (p == panelStage30)
+                return 2;
+            if (p == panelStage10)
+                return 3;
+            if (p == panelStage3)
+                return 4;
+            if (p == panelStage1)
+                return 5;
+            return 0;
+        }
+
+        /// <summary>
+        /// Cell pick entry point: if the click is on an earlier CLIP stage than the current one, navigate back
+        /// (hide forward panels); otherwise treat as a refine pick on the current stage.
+        /// </summary>
+        public void OnUserPickedImageFromPanel(ImageGridPanel sourcePanel, string imageId)
+        {
+            if (_busy || string.IsNullOrEmpty(imageId))
+                return;
+
+            int panelStage = PanelStageFromPanel(sourcePanel);
+            if (panelStage > 0
+                && _lastResponseStage > panelStage
+                && CanNavigateBackToStage(panelStage))
+            {
+                RequestNavigateBackToStage(panelStage);
+                return;
+            }
+
+            OnUserPickedImage(imageId);
         }
 
         /// <summary>
@@ -224,6 +281,39 @@ namespace Scenes.script
                 if (p == null)
                     continue;
                 p.SetSelectionEnabled(s == stage);
+            }
+
+            _busy = true;
+            StartCoroutine(RefreshPanelsFromCacheThroughStageCoroutine(stage));
+        }
+
+        /// <summary>
+        /// Re-applies cached API thumbnails for stages 1..stage and clears forward cache so the UI matches the snapshot.
+        /// </summary>
+        IEnumerator RefreshPanelsFromCacheThroughStageCoroutine(int stage)
+        {
+            try
+            {
+                for (int k = stage + 1; k < _cachedStageResults.Length; k++)
+                    _cachedStageResults[k] = null;
+
+                for (int s = 1; s <= stage; s++)
+                {
+                    ImageGridPanel p = PanelForStage(s);
+                    ClipResultRecordDto[] cached = _cachedStageResults[s];
+                    if (p == null || cached == null || cached.Length == 0)
+                        continue;
+
+                    Action<string> onPick = s == stage ? (id => OnUserPickedImageFromPanel(p, id)) : null;
+                    yield return p.PopulateFromApiResults(cached, onPick, reuseLoadedThumbnailsWithoutNetwork: true);
+                }
+
+                for (int s = 1; s <= stage; s++)
+                    PanelForStage(s)?.SetSelectionEnabled(s == stage);
+            }
+            finally
+            {
+                _busy = false;
             }
         }
 
@@ -366,7 +456,7 @@ namespace Scenes.script
             }
 
             ActivateThroughStage(resp.stage);
-            yield return StartCoroutine(target.PopulateFromApiResults(resp.results, OnUserPickedImage));
+            yield return StartCoroutine(target.PopulateFromApiResults(resp.results, id => OnUserPickedImageFromPanel(target, id)));
             target.SetSelectionEnabled(true);
             _busy = false;
         }
