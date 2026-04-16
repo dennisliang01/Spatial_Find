@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.XR;
-using UnityEngine.UI;
 using System.Collections.Generic;
 
 namespace Scenes.script
@@ -121,10 +120,8 @@ namespace Scenes.script
 
             try
             {
-                // Ray from controller pose: origin + aim direction follow this transform (XR rig / attach point).
-                Vector3 rayDirection = transform.forward;
                 laser.SetPosition(0, transform.position);
-                laser.SetPosition(1, transform.position + rayDirection * 25f);
+                laser.SetPosition(1, transform.position + transform.forward * 5f);
             }
             catch (System.Exception e)
             {
@@ -221,16 +218,7 @@ namespace Scenes.script
 
             Debug.Log($"Processing interaction with: {hitObject.name}");
 
-            // Check for Button component (UI buttons in image grid)
-            Button btn = hitObject.GetComponent<Button>();
-            if (btn != null && btn.interactable)
-            {
-                Debug.Log($"Clicking button: {hitObject.name}");
-                btn.onClick.Invoke();
-                return;
-            }
-
-            // moved the subpanel handleing logic here
+            // moved the subpanel handleing logic here 
             SubPanelController subPanel = hitObject.GetComponent<SubPanelController>();
             if (subPanel != null)
             {

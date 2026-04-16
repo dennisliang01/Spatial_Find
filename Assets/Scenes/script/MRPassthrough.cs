@@ -17,37 +17,8 @@ public class MRPassthrough : MonoBehaviour
     void Start()
     {
         _passthroughCreated = false;
-
-        SetCameraTransparent();
-
         PassthroughAPI.CreatePlanarPassthrough(out _passthroughId, LayerType.Underlay);
         _passthroughCreated = _passthroughId != default;
-
-        if (_passthroughCreated)
-            Debug.Log("[MRPassthrough] Passthrough created successfully.");
-        else
-            Debug.LogWarning("[MRPassthrough] Passthrough creation failed.");
-    }
-
-    void SetCameraTransparent()
-    {
-        Camera cam = Camera.main;
-        if (cam == null)
-        {
-            var xrOrigin = GameObject.Find("XR Origin");
-            if (xrOrigin != null)
-                cam = xrOrigin.GetComponentInChildren<Camera>();
-        }
-
-        if (cam != null)
-        {
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
-        }
-        else
-        {
-            Debug.LogWarning("[MRPassthrough] No camera found to set transparent background.");
-        }
     }
 
     void OnDestroy()
