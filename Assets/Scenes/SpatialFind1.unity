@@ -372,7 +372,6 @@ GameObject:
   - component: {fileID: 231418495}
   - component: {fileID: 231418494}
   - component: {fileID: 231418496}
-  - component: {fileID: 231418497}
   m_Layer: 0
   m_Name: ImageGridPanel_90
   m_TagString: Untagged
@@ -399,6 +398,7 @@ MonoBehaviour:
   spacing: {x: 10, y: 10}
   padding: {x: 20, y: 20}
   canvasScale: 0.015
+  worldCanvasSpawnDistanceMeters: 5
   imageFolderName: collague_images
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
@@ -442,27 +442,6 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RaycastTriggerInteraction: 2
---- !u!65 &231418497
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 231418493}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1}
-  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &415531241
 GameObject:
   m_ObjectHideFlags: 0
@@ -692,6 +671,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   isLeftController: 0
+  clipSearchFlowController: {fileID: 0}
 --- !u!114 &539902414
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1605,6 +1585,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   isLeftController: 1
+  clipSearchFlowController: {fileID: 0}
 --- !u!114 &758416243
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2589,6 +2570,7 @@ MonoBehaviour:
   spacing: {x: 10, y: 10}
   padding: {x: 20, y: 20}
   canvasScale: 0.015
+  worldCanvasSpawnDistanceMeters: 3.5
   imageFolderName: collague_images
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
@@ -2798,6 +2780,7 @@ MonoBehaviour:
   spacing: {x: 10, y: 10}
   padding: {x: 20, y: 20}
   canvasScale: 0.015
+  worldCanvasSpawnDistanceMeters: 3.5
   imageFolderName: collague_images
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
@@ -3007,6 +2990,7 @@ MonoBehaviour:
   spacing: {x: 10, y: 10}
   padding: {x: 20, y: 20}
   canvasScale: 0.02
+  worldCanvasSpawnDistanceMeters: 3.5
   imageFolderName: collague_images
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
@@ -4116,6 +4100,7 @@ MonoBehaviour:
   spacing: {x: 10, y: 10}
   padding: {x: 20, y: 20}
   canvasScale: 0.015
+  worldCanvasSpawnDistanceMeters: 3.5
   imageFolderName: collague_images
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}

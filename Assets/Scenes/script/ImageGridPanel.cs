@@ -28,6 +28,14 @@ namespace Scenes.script
         [Tooltip("World-space scale of the canvas. 0.001 means 1 UI unit ≈ 1 mm.")]
         public float canvasScale = 0.001f;
 
+        [Tooltip("Distance in front of the user when the world-space canvas is anchored (see WorldSpaceCanvasSpawnOnce).")]
+        [SerializeField]
+        float worldCanvasSpawnDistanceMeters = 3.5f;
+
+        [Tooltip("When true, the grid canvas is world-anchored the first time this panel is enabled, not at shell build. Inactive CLIP stages stay parented until shown.")]
+        [SerializeField]
+        bool anchorWorldSpaceCanvasWhenEnabled = true;
+
         [Header("Data")]
         public string imageFolderName = "dogs_vs_cats";
 
@@ -76,10 +84,25 @@ namespace Scenes.script
         int _navStageIndex;
         Action<int> _onHeaderNavigateClicked;
         bool _shellBuilt;
+        Transform _canvasRoot;
 
         void Awake()
         {
             BuildShellIfNeeded();
+        }
+
+        void OnEnable()
+        {
+            BuildShellIfNeeded();
+            if (anchorWorldSpaceCanvasWhenEnabled && _canvasRoot != null && _canvasRoot.parent == null)
+                _canvasRoot.gameObject.SetActive(true);
+            EnsureWorldCanvasAnchorIfConfigured();
+        }
+
+        void OnDisable()
+        {
+            if (_canvasRoot != null && _canvasRoot.parent == null)
+                _canvasRoot.gameObject.SetActive(false);
         }
 
         void Start()
@@ -117,13 +140,17 @@ namespace Scenes.script
             BuildShellIfNeeded();
             TryFindHeaderBarTransform();
             EnsureHeaderNavigateButton();
+            if (isActiveAndEnabled)
+                EnsureWorldCanvasAnchorIfConfigured();
         }
 
         void TryFindHeaderBarTransform()
         {
             if (_headerBarRT != null)
                 return;
-            Transform t = transform.Find("ImageGrid_Canvas/PanelBG/HeaderBar");
+            Transform t = _canvasRoot != null
+                ? _canvasRoot.Find("PanelBG/HeaderBar")
+                : transform.Find("ImageGrid_Canvas/PanelBG/HeaderBar");
             if (t != null)
                 _headerBarRT = t.GetComponent<RectTransform>();
         }
@@ -324,6 +351,7 @@ namespace Scenes.script
 
             GameObject canvasGO = new GameObject("ImageGrid_Canvas");
             canvasGO.transform.SetParent(transform, false);
+            _canvasRoot = canvasGO.transform;
 
             Canvas canvas = canvasGO.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
@@ -444,6 +472,17 @@ namespace Scenes.script
             _shellBuilt = true;
             Debug.Log($"[ImageGridPanel] Built shell {columns}x{rows} on {name}.");
             EnsureHeaderNavigateButton();
+        }
+
+        void EnsureWorldCanvasAnchorIfConfigured()
+        {
+            if (!anchorWorldSpaceCanvasWhenEnabled || !_shellBuilt || _canvasRoot == null)
+                return;
+            if (_canvasRoot.GetComponent<WorldSpaceCanvasSpawnOnce>() != null)
+                return;
+
+            var spawnOnce = _canvasRoot.gameObject.AddComponent<WorldSpaceCanvasSpawnOnce>();
+            spawnOnce.OverrideSpawnDistance(worldCanvasSpawnDistanceMeters);
         }
 
         /// <summary>
