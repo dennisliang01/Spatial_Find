@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -33,6 +34,14 @@ namespace Scenes.script
         [SerializeField]
         [Tooltip("Max frames to wait for XR display before placing anyway.")]
         int maxFramesWaitForXr = 120;
+
+        bool _hasPlaced;
+
+        /// <summary>True after the one-time world placement completed successfully (rig camera found and pose applied).</summary>
+        public bool HasPlaced => _hasPlaced;
+
+        /// <summary>Invoked once when <see cref="HasPlaced"/> becomes true.</summary>
+        public event Action Placed;
 
         Canvas _canvas;
 
@@ -91,12 +100,14 @@ namespace Scenes.script
 
             if (faceUserOnSpawn)
             {
+                // World-space Canvas draws its front on the local -Z / “into the screen” side of the plane.
+                // LookRotation(toUser) aligned +Z toward the headset, so you saw the back of the panel — use -toUser.
                 Vector3 toUser = head.position - transform.position;
                 if (yawOnly)
                     toUser.y = 0f;
 
                 if (toUser.sqrMagnitude > 1e-6f)
-                    transform.rotation = Quaternion.LookRotation(toUser.normalized, Vector3.up);
+                    transform.rotation = Quaternion.LookRotation(-toUser.normalized, Vector3.up);
             }
 
             if (transform.parent != null)
@@ -105,6 +116,9 @@ namespace Scenes.script
                     $"{nameof(WorldSpaceCanvasSpawnOnce)}: Canvas was still parented to '{transform.parent.name}'; moving to scene root so it stays world-locked.");
                 transform.SetParent(null, worldPositionStays: true);
             }
+
+            _hasPlaced = true;
+            Placed?.Invoke();
         }
 
         Vector3 GetPlacementForward(Transform head)

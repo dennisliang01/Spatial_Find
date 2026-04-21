@@ -483,6 +483,9 @@ namespace Scenes.script
 
             var spawnOnce = _canvasRoot.gameObject.AddComponent<WorldSpaceCanvasSpawnOnce>();
             spawnOnce.OverrideSpawnDistance(worldCanvasSpawnDistanceMeters);
+
+            if (_canvasRoot.GetComponent<CanvasSpatialAnchor>() == null)
+                _canvasRoot.gameObject.AddComponent<CanvasSpatialAnchor>();
         }
 
         /// <summary>

@@ -1,7 +1,10 @@
+using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit;
-using System.Collections.Generic;
 
 namespace Scenes.script
 {
@@ -243,6 +246,7 @@ namespace Scenes.script
             SubPanelController subPanel = hitObject.GetComponent<SubPanelController>();
             if (subPanel != null)
             {
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 subPanel.SelectPanel();
 
                 MeshController mainPanel = FindMainPanel(hitObject.transform);
@@ -276,6 +280,7 @@ namespace Scenes.script
             MeshController meshController = hitObject.GetComponent<MeshController>();
             if (meshController != null)
             {
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 if (!meshController.hasChild)
                 {
                     Debug.Log("Select a subpanel to proceed");
@@ -293,6 +298,7 @@ namespace Scenes.script
 
             if (imageTile != null && !string.IsNullOrEmpty(imageTile.imageId))
             {
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 if (clipSearchFlowController != null)
                 {
                     ImageGridPanel grid = imageTile.GetComponentInParent<ImageGridPanel>();
@@ -303,6 +309,33 @@ namespace Scenes.script
                     Debug.LogWarning("WorkingController: ClipSearchFlowController not found; cannot select image.");
                 }
 
+                return;
+            }
+
+            TMP_InputField tmpInput = hitObject.GetComponent<TMP_InputField>()
+                ?? hitObject.GetComponentInParent<TMP_InputField>();
+            if (tmpInput != null)
+            {
+                if (tmpInput.interactable)
+                {
+                    EventSystem es = EventSystem.current;
+                    if (es != null)
+                        es.SetSelectedGameObject(tmpInput.gameObject);
+                    tmpInput.ActivateInputField();
+                    var focusComp = tmpInput.GetComponent<TmpInputFieldXrPointerFocus>();
+                    if (focusComp != null)
+                        focusComp.BeginRetainPhysicsSelection();
+                }
+                return;
+            }
+
+            Button uiButton = hitObject.GetComponent<Button>()
+                ?? hitObject.GetComponentInParent<Button>();
+            if (uiButton != null)
+            {
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
+                if (uiButton.interactable)
+                    uiButton.onClick.Invoke();
                 return;
             }
 

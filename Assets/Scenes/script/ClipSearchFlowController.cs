@@ -39,6 +39,12 @@ namespace Scenes.script
         [Tooltip("When set, stage image panels start hidden and this root is shown until the user submits queryInput (Enter or submitButton).")]
         public GameObject initialPromptPanel;
 
+        [Tooltip("Optional. Clears queryInput text when clicked.")]
+        public Button clearButton;
+
+        [Tooltip("Optional. Short status line on the prompt (e.g. search errors).")]
+        public TextMeshProUGUI promptStatusLabel;
+
         [Header("Panel Positioning")]
         [Tooltip("World-space Z offset applied between successive stage panels so each next stage appears closer to the camera.")]
         public float stageDepthStep = 2f;
@@ -56,10 +62,13 @@ namespace Scenes.script
         {
             PropagateApiClient();
             ApplyStagePanelDepthOffsets();
+            SetupPromptPhysicsAndFocus();
             if (submitButton != null)
                 submitButton.onClick.AddListener(SubmitQueryFromUi);
             if (queryInput != null)
                 queryInput.onSubmit.AddListener(OnQueryInputSubmit);
+            if (clearButton != null)
+                clearButton.onClick.AddListener(OnClearPromptClicked);
         }
 
         void OnDestroy()
@@ -68,6 +77,101 @@ namespace Scenes.script
                 submitButton.onClick.RemoveListener(SubmitQueryFromUi);
             if (queryInput != null)
                 queryInput.onSubmit.RemoveListener(OnQueryInputSubmit);
+            if (clearButton != null)
+                clearButton.onClick.RemoveListener(OnClearPromptClicked);
+        }
+
+        void SetupPromptPhysicsAndFocus()
+        {
+            if (queryInput != null && queryInput.GetComponent<TmpInputFieldXrPointerFocus>() == null)
+                queryInput.gameObject.AddComponent<TmpInputFieldXrPointerFocus>();
+
+            EnsureBoxColliderOnRect(queryInput != null ? queryInput.transform as RectTransform : null);
+            EnsureBoxColliderOnRect(submitButton != null ? submitButton.transform as RectTransform : null);
+            EnsureBoxColliderOnRect(clearButton != null ? clearButton.transform as RectTransform : null);
+        }
+
+        static void EnsureBoxColliderOnRect(RectTransform rt)
+        {
+            if (rt == null)
+                return;
+            if (rt.GetComponent<BoxCollider>() != null)
+                return;
+            rt.gameObject.AddComponent<BoxCollider>();
+        }
+
+        void ResyncPromptPhysicsColliders()
+        {
+            SyncUiCollider(queryInput != null ? queryInput.transform as RectTransform : null,
+                queryInput != null ? queryInput.GetComponent<BoxCollider>() : null);
+            SyncUiCollider(submitButton != null ? submitButton.transform as RectTransform : null,
+                submitButton != null ? submitButton.GetComponent<BoxCollider>() : null);
+            SyncUiCollider(clearButton != null ? clearButton.transform as RectTransform : null,
+                clearButton != null ? clearButton.GetComponent<BoxCollider>() : null);
+        }
+
+        static void SyncUiCollider(RectTransform rt, BoxCollider box)
+        {
+            if (rt == null || box == null)
+                return;
+
+            Rect r = rt.rect;
+            float depth = Mathf.Max(4f, Mathf.Min(
+                Mathf.Max(r.width, 0.01f),
+                Mathf.Max(r.height, 0.01f)) * 0.08f);
+            box.center = new Vector3(r.center.x, r.center.y, 0f);
+            box.size = new Vector3(
+                Mathf.Max(r.width, 0.01f),
+                Mathf.Max(r.height, 0.01f),
+                depth);
+        }
+
+        IEnumerator ResyncPromptCollidersNextFrame()
+        {
+            yield return null;
+            RectTransform layoutRoot = null;
+            if (initialPromptPanel != null)
+                layoutRoot = initialPromptPanel.transform as RectTransform;
+            else if (queryInput != null)
+                layoutRoot = queryInput.transform as RectTransform;
+            if (layoutRoot != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(layoutRoot);
+            Canvas.ForceUpdateCanvases();
+            ResyncPromptPhysicsColliders();
+        }
+
+        void SetPromptStatus(string message)
+        {
+            if (promptStatusLabel != null)
+                promptStatusLabel.text = message ?? string.Empty;
+        }
+
+        void SetPromptInteractable(bool interactable)
+        {
+            if (queryInput != null)
+                queryInput.interactable = interactable;
+            if (submitButton != null)
+                submitButton.interactable = interactable;
+            if (clearButton != null)
+                clearButton.interactable = interactable;
+        }
+
+        void OnClearPromptClicked()
+        {
+            if (queryInput != null)
+                queryInput.text = string.Empty;
+        }
+
+        void ShowPromptUiAfterStage1Failure(string errorMessage)
+        {
+            SetPromptStatus(errorMessage);
+            SetPromptInteractable(true);
+            if (initialPromptPanel != null)
+            {
+                if (panelStage90 != null)
+                    panelStage90.gameObject.SetActive(false);
+                initialPromptPanel.SetActive(true);
+            }
         }
 
         void OnQueryInputSubmit(string text)
@@ -103,6 +207,11 @@ namespace Scenes.script
         {
             ApplyInitialBootState();
             StartCoroutine(StartFlowRoutine());
+            if (initialPromptPanel != null || queryInput != null)
+            {
+                ResyncPromptPhysicsColliders();
+                StartCoroutine(ResyncPromptCollidersNextFrame());
+            }
         }
 
         /// <summary>
@@ -367,6 +476,8 @@ namespace Scenes.script
                 return;
             }
 
+            SetPromptStatus(string.Empty);
+
             if (initialPromptPanel != null)
                 initialPromptPanel.SetActive(false);
 
@@ -421,6 +532,8 @@ namespace Scenes.script
             if (!string.IsNullOrEmpty(apiClient.LastError))
             {
                 Debug.LogWarning("[ClipSearchFlow] Search error: " + apiClient.LastError);
+                if (stage == 1)
+                    ShowPromptUiAfterStage1Failure("Error: " + apiClient.LastError);
                 _busy = false;
                 ReenablePanelForStage(stage);
                 yield break;
@@ -430,6 +543,8 @@ namespace Scenes.script
             if (resp == null || resp.results == null)
             {
                 Debug.LogWarning("[ClipSearchFlow] Empty response.");
+                if (stage == 1)
+                    ShowPromptUiAfterStage1Failure("Error: Empty response.");
                 _busy = false;
                 yield break;
             }
