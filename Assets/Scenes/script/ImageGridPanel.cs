@@ -88,43 +88,33 @@ namespace Scenes.script
         [SerializeField]
         bool enableStackDimOverlay = true;
 
-        [Tooltip("Multiplies the gradient texture alpha for the first stage behind the foreground.")]
+        [Tooltip("Brightness multiplier (0–1) for stages behind the current one. 0.2 = 20% brightness (uniform black overlay).")]
         [SerializeField]
-        float stackDimBaseAlpha = 0.42f;
+        [Range(0f, 1f)]
+        float previousStagesBrightness = 0.2f;
 
-        [Tooltip("Extra alpha per additional stage behind the foreground (capped by stackDimMaxAlpha).")]
-        [SerializeField]
-        float stackDimAlphaPerBackStep = 0.1f;
-
-        [Tooltip("Upper cap for the overlay tint alpha.")]
-        [SerializeField]
-        float stackDimMaxAlpha = 0.92f;
-
-        static Texture2D s_stackDimGradientTexture;
+        static Texture2D s_stackDimSolidTexture;
         RawImage _stackDimOverlay;
 
-        static Texture2D GetOrCreateStackDimGradientTexture()
+        static Texture2D GetOrCreateStackDimSolidTexture()
         {
-            if (s_stackDimGradientTexture != null)
-                return s_stackDimGradientTexture;
+            if (s_stackDimSolidTexture != null)
+                return s_stackDimSolidTexture;
 
-            const int w = 8;
-            const int h = 256;
-            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
-            for (int y = 0; y < h; y++)
+            const int n = 4;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+            var white = Color.white;
+            for (int y = 0; y < n; y++)
             {
-                float v = h <= 1 ? 0f : y / (float)(h - 1);
-                float a = Mathf.Lerp(0.1f, 0.55f, v);
-                var c = new Color(0f, 0f, 0f, a);
-                for (int x = 0; x < w; x++)
-                    tex.SetPixel(x, y, c);
+                for (int x = 0; x < n; x++)
+                    tex.SetPixel(x, y, white);
             }
 
             tex.Apply(false);
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.filterMode = FilterMode.Bilinear;
-            s_stackDimGradientTexture = tex;
-            return s_stackDimGradientTexture;
+            s_stackDimSolidTexture = tex;
+            return s_stackDimSolidTexture;
         }
 
         static readonly HashSet<string> ImageExtensions = new HashSet<string>
@@ -241,10 +231,11 @@ namespace Scenes.script
         }
 
         /// <summary>
-        /// Dims this panel when it represents an earlier CLIP stage than the foreground (vertical gradient).
+        /// Dims this panel when it represents an earlier CLIP stage than the foreground (uniform
+        /// <see cref="previousStagesBrightness"/> via a full-panel black overlay).
         /// Pass <paramref name="active"/> false for the current / front stage.
         /// </summary>
-        /// <param name="stepsBehind">1 = one stage behind the front, 2 = two stages back, etc.</param>
+        /// <param name="stepsBehind">Must be &gt;= 1 for dimming to apply; value does not change brightness (all back stages match).</param>
         public void SetBackgroundStackDimming(bool active, int stepsBehind)
         {
             if (_stackDimOverlay == null)
@@ -256,11 +247,9 @@ namespace Scenes.script
                 return;
             }
 
-            float a = Mathf.Clamp(
-                stackDimBaseAlpha + stackDimAlphaPerBackStep * (stepsBehind - 1),
-                stackDimBaseAlpha,
-                stackDimMaxAlpha);
-            _stackDimOverlay.color = new Color(1f, 1f, 1f, a);
+            float b = Mathf.Clamp01(previousStagesBrightness);
+            float overlayAlpha = 1f - b;
+            _stackDimOverlay.color = new Color(0f, 0f, 0f, overlayAlpha);
             _stackDimOverlay.gameObject.SetActive(true);
         }
 
@@ -755,10 +744,10 @@ namespace Scenes.script
             RectTransform dimRt = dimGo.GetComponent<RectTransform>();
             StretchFill(dimRt);
             _stackDimOverlay = dimGo.AddComponent<RawImage>();
-            _stackDimOverlay.texture = GetOrCreateStackDimGradientTexture();
+            _stackDimOverlay.texture = GetOrCreateStackDimSolidTexture();
             _stackDimOverlay.uvRect = new Rect(0f, 0f, 1f, 1f);
             _stackDimOverlay.raycastTarget = false;
-            _stackDimOverlay.color = Color.white;
+            _stackDimOverlay.color = new Color(0f, 0f, 0f, 0f);
             _stackDimOverlay.gameObject.SetActive(false);
             dimGo.transform.SetAsLastSibling();
 
