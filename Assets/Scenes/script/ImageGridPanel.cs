@@ -36,6 +36,13 @@ namespace Scenes.script
         [SerializeField]
         bool anchorWorldSpaceCanvasWhenEnabled = true;
 
+        [Header("Aspect Ratio")]
+        [Tooltip("When true, forces the canvas height to match targetAspectRatio (width/height) based on computed gridWidth.")]
+        public bool useFixedAspectRatio = true;
+
+        [Tooltip("Width divided by height. e.g. 16/9 = 1.777, 4/3 = 1.333")]
+        public float targetAspectRatio = 1.777f;
+
         [Header("Data")]
         public string imageFolderName = "dogs_vs_cats";
 
@@ -65,6 +72,61 @@ namespace Scenes.script
         [Tooltip("Short label in the top-left of the panel.")]
         public string layerLabelText = "Layer";
 
+        [Header("Search chrome (CLIP flow)")]
+        [Tooltip("Shown on a bar below the image grid.")]
+        [SerializeField]
+        string footerInstructionText = "Select the image closest to what you are looking for.";
+
+        [SerializeField]
+        Color promptPillColor = new Color(0.38f, 0.38f, 0.38f, 1f);
+
+        [SerializeField]
+        Color footerBarColor = new Color(0.48f, 0.48f, 0.48f, 0.95f);
+
+        [Header("Stack depth (CLIP)")]
+        [Tooltip("When false, stack dimming is never shown for this panel.")]
+        [SerializeField]
+        bool enableStackDimOverlay = true;
+
+        [Tooltip("Multiplies the gradient texture alpha for the first stage behind the foreground.")]
+        [SerializeField]
+        float stackDimBaseAlpha = 0.42f;
+
+        [Tooltip("Extra alpha per additional stage behind the foreground (capped by stackDimMaxAlpha).")]
+        [SerializeField]
+        float stackDimAlphaPerBackStep = 0.1f;
+
+        [Tooltip("Upper cap for the overlay tint alpha.")]
+        [SerializeField]
+        float stackDimMaxAlpha = 0.92f;
+
+        static Texture2D s_stackDimGradientTexture;
+        RawImage _stackDimOverlay;
+
+        static Texture2D GetOrCreateStackDimGradientTexture()
+        {
+            if (s_stackDimGradientTexture != null)
+                return s_stackDimGradientTexture;
+
+            const int w = 8;
+            const int h = 256;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            for (int y = 0; y < h; y++)
+            {
+                float v = h <= 1 ? 0f : y / (float)(h - 1);
+                float a = Mathf.Lerp(0.1f, 0.55f, v);
+                var c = new Color(0f, 0f, 0f, a);
+                for (int x = 0; x < w; x++)
+                    tex.SetPixel(x, y, c);
+            }
+
+            tex.Apply(false);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            s_stackDimGradientTexture = tex;
+            return s_stackDimGradientTexture;
+        }
+
         static readonly HashSet<string> ImageExtensions = new HashSet<string>
             { ".jpg", ".jpeg", ".png" };
 
@@ -78,11 +140,18 @@ namespace Scenes.script
 
         readonly List<CellSlot> _cells = new List<CellSlot>();
         TextMeshProUGUI _layerLabel;
+        TextMeshProUGUI _queryPromptText;
+        TextMeshProUGUI _footerInstructionText;
         RectTransform _gridLayoutRoot;
         RectTransform _headerBarRT;
         Button _headerNavigateButton;
+        Button _closeToStartButton;
+        RectTransform _closeButtonRT;
         int _navStageIndex;
         Action<int> _onHeaderNavigateClicked;
+        Action _onCloseToStart;
+        string _pendingQuery = "";
+        [System.NonSerialized]
         bool _shellBuilt;
         Transform _canvasRoot;
 
@@ -121,6 +190,78 @@ namespace Scenes.script
         {
             if (_layerLabel != null)
                 _layerLabel.text = text ?? "";
+        }
+
+        /// <summary>Displays the user’s search prompt above the grid (CLIP flow).</summary>
+        public void SetSearchQuery(string query)
+        {
+            string q = query ?? string.Empty;
+            if (_queryPromptText == null)
+            {
+                _pendingQuery = q;
+                return;
+            }
+
+            _queryPromptText.text = q;
+        }
+
+        /// <summary>Wires the top-right close control; pass null to disable.</summary>
+        public void SetOnCloseToStart(Action callback)
+        {
+            _onCloseToStart = callback;
+            BuildShellIfNeeded();
+            RefreshCloseButtonWiring();
+        }
+
+        void RefreshCloseButtonWiring()
+        {
+            if (_closeToStartButton == null)
+                return;
+
+            _closeToStartButton.onClick.RemoveAllListeners();
+            if (_onCloseToStart != null)
+                _closeToStartButton.onClick.AddListener(() => _onCloseToStart());
+
+            _closeToStartButton.interactable = _onCloseToStart != null;
+        }
+
+        /// <summary>Clears thumbnails and picks; does not destroy the shell.</summary>
+        public void ClearGridAndResetPick()
+        {
+            if (!_shellBuilt)
+                return;
+
+            foreach (CellSlot slot in _cells)
+            {
+                ClearCell(slot);
+                WirePick(slot, null, null);
+            }
+
+            SetSelectionEnabled(false);
+        }
+
+        /// <summary>
+        /// Dims this panel when it represents an earlier CLIP stage than the foreground (vertical gradient).
+        /// Pass <paramref name="active"/> false for the current / front stage.
+        /// </summary>
+        /// <param name="stepsBehind">1 = one stage behind the front, 2 = two stages back, etc.</param>
+        public void SetBackgroundStackDimming(bool active, int stepsBehind)
+        {
+            if (_stackDimOverlay == null)
+                return;
+
+            if (!enableStackDimOverlay || !active || stepsBehind < 1)
+            {
+                _stackDimOverlay.gameObject.SetActive(false);
+                return;
+            }
+
+            float a = Mathf.Clamp(
+                stackDimBaseAlpha + stackDimAlphaPerBackStep * (stepsBehind - 1),
+                stackDimBaseAlpha,
+                stackDimMaxAlpha);
+            _stackDimOverlay.color = new Color(1f, 1f, 1f, a);
+            _stackDimOverlay.gameObject.SetActive(true);
         }
 
         /// <summary>Registers which CLIP stage this grid represents (1–5). Use 0 for local-only grids.</summary>
@@ -201,7 +342,42 @@ namespace Scenes.script
                 yield break;
             BoxCollider box = hitRt.GetComponent<BoxCollider>();
             if (box != null)
-                SyncUiCellCollider(hitRt, box);
+                SyncUiHeaderNavigateColliderThin(hitRt, box);
+        }
+
+        IEnumerator ResyncCloseButtonColliderNextFrame(RectTransform closeRt)
+        {
+            yield return null;
+            if (closeRt == null)
+                yield break;
+            BoxCollider box = closeRt.GetComponent<BoxCollider>();
+            if (box != null)
+                SyncUiCloseColliderWithForwardBias(closeRt, box);
+        }
+
+        /// <summary>
+        /// Keeps the header navigate slab thin in local Z so oblique controller rays are less likely to
+        /// register it ahead of UI below (e.g. CloseToStart) on stacked world canvases.
+        /// </summary>
+        static void SyncUiHeaderNavigateColliderThin(RectTransform rt, BoxCollider box)
+        {
+            SyncUiCellCollider(rt, box);
+            Vector3 s = box.size;
+            s.z = Mathf.Min(s.z, 8f);
+            box.size = s;
+        }
+
+        /// <summary>
+        /// Nudges the close button collider slightly along local +Z so physics ray picks tend to favor it
+        /// over deeper stacked panels when distances tie closely.
+        /// </summary>
+        static void SyncUiCloseColliderWithForwardBias(RectTransform rt, BoxCollider box)
+        {
+            SyncUiCellCollider(rt, box);
+            box.center = new Vector3(box.center.x, box.center.y, box.center.z + 22f);
+            Vector3 s = box.size;
+            s.z = Mathf.Max(8f, s.z);
+            box.size = s;
         }
 
         public void SetSelectionEnabled(bool enabled)
@@ -344,10 +520,28 @@ namespace Scenes.script
             int needed = columns * rows;
             float gridWidth = columns * cellSize.x + (columns - 1) * spacing.x;
             float gridHeight = rows * cellSize.y + (rows - 1) * spacing.y;
-            float headerHeight = 50f;
-            float labelHeight = 30f;
+
+            float headerHeight = 44f;
+            float promptBarHeight = 52f;
+            bool showFooterInstruction = clipSearchStageIndex != 5;
+            float footerBarHeight = showFooterInstruction ? 52f : 0f;
+            float topSection = headerHeight + promptBarHeight;
+
+            if (useFixedAspectRatio && targetAspectRatio > 0.001f)
+            {
+                float totalW = gridWidth + padding.x * 2f;
+                float targetTotalH = totalW / targetAspectRatio;
+                // totalHeight = topSection + (gridHeight + spacing.y) + footerBarHeight + padding.y * 2
+                float verticalChrome = topSection + footerBarHeight + padding.y * 2f + spacing.y;
+                float newGridHeight = targetTotalH - verticalChrome;
+                float newCellHeight = (newGridHeight - spacing.y * (rows - 1)) / Mathf.Max(rows, 1);
+                cellSize.y = Mathf.Max(newCellHeight, 1f);
+                gridHeight = rows * cellSize.y + (rows - 1) * spacing.y;
+            }
+
+            float gridVisualHeight = gridHeight + spacing.y;
             float totalWidth = gridWidth + padding.x * 2;
-            float totalHeight = gridHeight + padding.y * 2 + headerHeight;
+            float totalHeight = topSection + gridVisualHeight + footerBarHeight + padding.y * 2f;
 
             GameObject canvasGO = new GameObject("ImageGrid_Canvas");
             canvasGO.transform.SetParent(transform, false);
@@ -385,34 +579,121 @@ namespace Scenes.script
             headerImg.raycastTarget = false;
             _headerBarRT = headerRT;
 
-            GameObject instrGO = CreateUIElement("InstructionText", headerGO.transform);
-            RectTransform instrRT = instrGO.GetComponent<RectTransform>();
-            StretchFill(instrRT);
-            instrRT.offsetMin = new Vector2(120f, 0);
-            instrRT.offsetMax = new Vector2(-20f, 0);
+            GameObject promptRowGO = CreateUIElement("QueryPromptRow", panelGO.transform);
+            RectTransform promptRowRT = promptRowGO.GetComponent<RectTransform>();
+            promptRowRT.anchorMin = new Vector2(0, 1);
+            promptRowRT.anchorMax = new Vector2(1, 1);
+            promptRowRT.pivot = new Vector2(0.5f, 1);
+            promptRowRT.sizeDelta = new Vector2(0, promptBarHeight);
+            promptRowRT.anchoredPosition = new Vector2(0, -headerHeight);
+            HorizontalLayoutGroup promptRowLayout = promptRowGO.AddComponent<HorizontalLayoutGroup>();
+            promptRowLayout.padding = new RectOffset(10, 10, 6, 6);
+            promptRowLayout.spacing = 8;
+            promptRowLayout.childAlignment = TextAnchor.MiddleCenter;
+            promptRowLayout.childForceExpandWidth = false;
+            promptRowLayout.childForceExpandHeight = true;
+            promptRowLayout.childControlWidth = true;
+            promptRowLayout.childControlHeight = true;
 
-            // Remove label text for now to save space; the layer label already indicates what to pick, and instructions were too long to fit legibly.
-            // TextMeshProUGUI instrTMP = instrGO.AddComponent<TextMeshProUGUI>();
-            // instrTMP.text = "Select the Image closest to what you are looking for.";
-            // instrTMP.fontSize = 20;
-            // instrTMP.color = Color.white;
-            // instrTMP.alignment = TextAlignmentOptions.Center;
-            // instrTMP.enableWordWrapping = true;
-
-            GameObject labelGO = CreateUIElement("FirstLayerLabel", panelGO.transform);
-            RectTransform labelRT = labelGO.GetComponent<RectTransform>();
-            labelRT.anchorMin = new Vector2(0, 1);
-            labelRT.anchorMax = new Vector2(0, 1);
-            labelRT.pivot = new Vector2(0, 1);
-            labelRT.sizeDelta = new Vector2(120f, labelHeight);
-            labelRT.anchoredPosition = new Vector2(5f, 0f);
+            GameObject labelGO = CreateUIElement("FirstLayerLabel", promptRowGO.transform);
+            LayoutElement labelLe = labelGO.AddComponent<LayoutElement>();
+            labelLe.minWidth = 90f;
+            labelLe.preferredWidth = 110f;
+            labelLe.flexibleWidth = 0f;
             _layerLabel = labelGO.AddComponent<TextMeshProUGUI>();
             _layerLabel.text = layerLabelText;
             _layerLabel.fontSize = 16;
             _layerLabel.color = new Color(0.75f, 0.75f, 0.75f, 1f);
-            _layerLabel.alignment = TextAlignmentOptions.Left;
+            _layerLabel.alignment = TextAlignmentOptions.MidlineLeft;
             _layerLabel.fontStyle = FontStyles.Italic;
             _layerLabel.raycastTarget = false;
+
+            GameObject pillGO = CreateUIElement("QueryPromptPill", promptRowGO.transform);
+            LayoutElement pillLe = pillGO.AddComponent<LayoutElement>();
+            pillLe.flexibleWidth = 1f;
+            pillLe.minWidth = 40f;
+            Image pillImg = pillGO.AddComponent<Image>();
+            pillImg.color = promptPillColor;
+            pillImg.raycastTarget = false;
+
+            GameObject queryTextGO = CreateUIElement("QueryText", pillGO.transform);
+            RectTransform queryTextRT = queryTextGO.GetComponent<RectTransform>();
+            StretchFill(queryTextRT);
+            queryTextRT.offsetMin = new Vector2(10f, 4f);
+            queryTextRT.offsetMax = new Vector2(-10f, -4f);
+            _queryPromptText = queryTextGO.AddComponent<TextMeshProUGUI>();
+            _queryPromptText.text = string.Empty;
+            _queryPromptText.fontSize = 14;
+            _queryPromptText.color = Color.white;
+            _queryPromptText.alignment = TextAlignmentOptions.MidlineLeft;
+            _queryPromptText.enableWordWrapping = true;
+            _queryPromptText.overflowMode = TextOverflowModes.Ellipsis;
+            _queryPromptText.raycastTarget = false;
+
+            GameObject closeGO = CreateUIElement("CloseToStart", promptRowGO.transform);
+            _closeButtonRT = closeGO.GetComponent<RectTransform>();
+            LayoutElement closeLe = closeGO.AddComponent<LayoutElement>();
+            closeLe.minWidth = 44f;
+            closeLe.preferredWidth = 44f;
+            closeLe.minHeight = 44f;
+            closeLe.preferredHeight = 44f;
+            closeLe.flexibleWidth = 0f;
+            Image closeImg = closeGO.AddComponent<Image>();
+            closeImg.color = new Color(0.5f, 0.5f, 0.5f, 1f);
+            closeImg.raycastTarget = true;
+            _closeToStartButton = closeGO.AddComponent<Button>();
+            _closeToStartButton.targetGraphic = closeImg;
+            _closeToStartButton.transition = Selectable.Transition.None;
+
+            GameObject closeLabelGO = CreateUIElement("Label", closeGO.transform);
+            RectTransform closeLabelRT = closeLabelGO.GetComponent<RectTransform>();
+            StretchFill(closeLabelRT);
+            TextMeshProUGUI closeTmp = closeLabelGO.AddComponent<TextMeshProUGUI>();
+            closeTmp.text = "\u00D7";
+            closeTmp.fontSize = 28;
+            closeTmp.color = Color.white;
+            closeTmp.alignment = TextAlignmentOptions.Center;
+            closeTmp.raycastTarget = false;
+
+            closeGO.AddComponent<BoxCollider>();
+            StartCoroutine(ResyncCloseButtonColliderNextFrame(_closeButtonRT));
+
+            if (showFooterInstruction)
+            {
+                GameObject footerGO = CreateUIElement("FooterInstructionBar", panelGO.transform);
+                RectTransform footerRT = footerGO.GetComponent<RectTransform>();
+                footerRT.anchorMin = new Vector2(0, 0);
+                footerRT.anchorMax = new Vector2(1, 0);
+                footerRT.pivot = new Vector2(0.5f, 0);
+                footerRT.sizeDelta = new Vector2(0, footerBarHeight);
+                footerRT.anchoredPosition = new Vector2(0, padding.y);
+                Image footerImg = footerGO.AddComponent<Image>();
+                footerImg.color = footerBarColor;
+                footerImg.raycastTarget = false;
+
+                GameObject footerTextGO = CreateUIElement("InstructionText", footerGO.transform);
+                RectTransform footerTextRT = footerTextGO.GetComponent<RectTransform>();
+                StretchFill(footerTextRT);
+                footerTextRT.offsetMin = new Vector2(12f, 4f);
+                footerTextRT.offsetMax = new Vector2(-12f, -4f);
+                _footerInstructionText = footerTextGO.AddComponent<TextMeshProUGUI>();
+                _footerInstructionText.text = footerInstructionText;
+                _footerInstructionText.fontSize = 15;
+                _footerInstructionText.color = Color.white;
+                _footerInstructionText.alignment = TextAlignmentOptions.Center;
+                _footerInstructionText.enableWordWrapping = true;
+                _footerInstructionText.raycastTarget = false;
+            }
+            else
+            {
+                _footerInstructionText = null;
+            }
+
+            if (!string.IsNullOrEmpty(_pendingQuery))
+            {
+                _queryPromptText.text = _pendingQuery;
+                _pendingQuery = string.Empty;
+            }
 
             GameObject gridBgGO = CreateUIElement("GridBG", panelGO.transform);
             RectTransform gridBgRT = gridBgGO.GetComponent<RectTransform>();
@@ -420,7 +701,8 @@ namespace Scenes.script
             gridBgRT.anchorMax = new Vector2(0.5f, 1f);
             gridBgRT.pivot = new Vector2(0.5f, 1f);
             gridBgRT.sizeDelta = new Vector2(gridWidth + spacing.x, gridHeight + spacing.y);
-            gridBgRT.anchoredPosition = new Vector2(0, -(headerHeight + padding.y - spacing.y * 0.5f));
+            float gridTopOffset = topSection + padding.y - spacing.y * 0.5f;
+            gridBgRT.anchoredPosition = new Vector2(0, -gridTopOffset);
             Image gridBgImg = gridBgGO.AddComponent<Image>();
             gridBgImg.color = gridBackground;
             gridBgImg.raycastTarget = false;
@@ -469,8 +751,20 @@ namespace Scenes.script
             ResyncCellPhysicsColliders();
             StartCoroutine(ResyncCellPhysicsCollidersNextFrame());
 
+            GameObject dimGo = CreateUIElement("BackgroundStackDimOverlay", panelGO.transform);
+            RectTransform dimRt = dimGo.GetComponent<RectTransform>();
+            StretchFill(dimRt);
+            _stackDimOverlay = dimGo.AddComponent<RawImage>();
+            _stackDimOverlay.texture = GetOrCreateStackDimGradientTexture();
+            _stackDimOverlay.uvRect = new Rect(0f, 0f, 1f, 1f);
+            _stackDimOverlay.raycastTarget = false;
+            _stackDimOverlay.color = Color.white;
+            _stackDimOverlay.gameObject.SetActive(false);
+            dimGo.transform.SetAsLastSibling();
+
             _shellBuilt = true;
             Debug.Log($"[ImageGridPanel] Built shell {columns}x{rows} on {name}.");
+            RefreshCloseButtonWiring();
             EnsureHeaderNavigateButton();
         }
 

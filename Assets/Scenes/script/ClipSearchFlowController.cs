@@ -166,6 +166,7 @@ namespace Scenes.script
         {
             SetPromptStatus(errorMessage);
             SetPromptInteractable(true);
+            ClearAllPanelStackDimming();
             if (initialPromptPanel != null)
             {
                 if (panelStage90 != null)
@@ -223,6 +224,14 @@ namespace Scenes.script
             if (initialPromptPanel == null)
                 return;
 
+            SetStagePanelsRandomFillDisabledForClipFlow();
+            HideAllStageGridPanels();
+            ClearFinalResultTextureIfAny();
+            initialPromptPanel.SetActive(true);
+        }
+
+        void SetStagePanelsRandomFillDisabledForClipFlow()
+        {
             if (panelStage90 != null)
                 panelStage90.populateRandomOnStart = false;
             if (panelStage30 != null)
@@ -233,7 +242,10 @@ namespace Scenes.script
                 panelStage3.populateRandomOnStart = false;
             if (panelStage1 != null)
                 panelStage1.populateRandomOnStart = false;
+        }
 
+        void HideAllStageGridPanels()
+        {
             if (panelStage90 != null)
                 panelStage90.gameObject.SetActive(false);
             if (panelStage30 != null)
@@ -244,14 +256,91 @@ namespace Scenes.script
                 panelStage3.gameObject.SetActive(false);
             if (panelStage1 != null)
                 panelStage1.gameObject.SetActive(false);
+        }
 
+        void ClearFinalResultTextureIfAny()
+        {
             if (finalResultRawImage != null && finalResultRawImage.texture != null)
             {
                 Destroy(finalResultRawImage.texture);
                 finalResultRawImage.texture = null;
             }
+        }
 
-            initialPromptPanel.SetActive(true);
+        /// <summary>
+        /// Aborts in-flight search work, clears stage grids, and returns to the initial prompt when configured.
+        /// </summary>
+        public void ReturnToStart()
+        {
+            StopAllCoroutines();
+            TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
+
+            _busy = false;
+            _query = string.Empty;
+            _selected.Clear();
+            _lastCandidateIds = Array.Empty<string>();
+            _lastResponseStage = 0;
+            ClearStageResultCache();
+
+            foreach (ImageGridPanel p in EnumerateStagePanels())
+            {
+                if (p == null)
+                    continue;
+                p.ClearGridAndResetPick();
+                p.SetSearchQuery(string.Empty);
+                p.SetOnCloseToStart(null);
+            }
+
+            ClearFinalResultTextureIfAny();
+            SetStagePanelsRandomFillDisabledForClipFlow();
+            HideAllStageGridPanels();
+            ClearAllPanelStackDimming();
+
+            if (initialPromptPanel != null)
+                initialPromptPanel.SetActive(true);
+
+            SetPromptStatus(string.Empty);
+            SetPromptInteractable(true);
+            if (queryInput != null)
+                queryInput.text = string.Empty;
+
+            if (initialPromptPanel != null || queryInput != null)
+            {
+                ResyncPromptPhysicsColliders();
+                StartCoroutine(ResyncPromptCollidersNextFrame());
+            }
+
+            StartCoroutine(RefocusPromptNextFrame());
+        }
+
+        IEnumerable<ImageGridPanel> EnumerateStagePanels()
+        {
+            yield return panelStage90;
+            yield return panelStage30;
+            yield return panelStage10;
+            yield return panelStage3;
+            yield return panelStage1;
+        }
+
+        IEnumerator RefocusPromptNextFrame()
+        {
+            yield return null;
+            if (queryInput == null || !queryInput.gameObject.activeInHierarchy)
+                yield break;
+            if (initialPromptPanel != null && !initialPromptPanel.activeSelf)
+                yield break;
+
+            queryInput.Select();
+            queryInput.ActivateInputField();
+        }
+
+        void ConfigurePanelSearchChrome(ImageGridPanel panel)
+        {
+            if (panel == null || string.IsNullOrEmpty(_query))
+                return;
+
+            panel.SetSearchQuery(_query);
+            panel.SetOnCloseToStart(ReturnToStart);
         }
 
         IEnumerator StartFlowRoutine()
@@ -392,6 +481,8 @@ namespace Scenes.script
                 p.SetSelectionEnabled(s == stage);
             }
 
+            RefreshStagePanelStackDimming();
+
             _busy = true;
             StartCoroutine(RefreshPanelsFromCacheThroughStageCoroutine(stage));
         }
@@ -414,6 +505,7 @@ namespace Scenes.script
                         continue;
 
                     Action<string> onPick = s == stage ? (id => OnUserPickedImageFromPanel(p, id)) : null;
+                    ConfigurePanelSearchChrome(p);
                     yield return p.PopulateFromApiResults(cached, onPick, reuseLoadedThumbnailsWithoutNetwork: true);
                 }
 
@@ -423,6 +515,7 @@ namespace Scenes.script
             finally
             {
                 _busy = false;
+                RefreshStagePanelStackDimming();
             }
         }
 
@@ -511,6 +604,8 @@ namespace Scenes.script
                 Destroy(finalResultRawImage.texture);
                 finalResultRawImage.texture = null;
             }
+
+            ClearAllPanelStackDimming();
         }
 
         void SetAllPanelsNonInteractive()
@@ -558,6 +653,7 @@ namespace Scenes.script
             if (resp.stage >= FinalStage)
             {
                 yield return StartCoroutine(ShowFinalResult(resp.results));
+                RefreshStagePanelStackDimming();
                 _busy = false;
                 yield break;
             }
@@ -571,8 +667,10 @@ namespace Scenes.script
             }
 
             ActivateThroughStage(resp.stage);
+            ConfigurePanelSearchChrome(target);
             yield return StartCoroutine(target.PopulateFromApiResults(resp.results, id => OnUserPickedImageFromPanel(target, id)));
             target.SetSelectionEnabled(true);
+            RefreshStagePanelStackDimming();
             _busy = false;
         }
 
@@ -596,6 +694,57 @@ namespace Scenes.script
             if (stage == 5)
                 return panelStage1;
             return null;
+        }
+
+        /// <summary>Highest CLIP stage index (1–5) whose panel GameObject is active.</summary>
+        int HighestActivePanelStage()
+        {
+            for (int s = 5; s >= 1; s--)
+            {
+                ImageGridPanel p = PanelForStage(s);
+                if (p != null && p.gameObject.activeSelf)
+                    return s;
+            }
+
+            return 0;
+        }
+
+        void ClearAllPanelStackDimming()
+        {
+            foreach (ImageGridPanel p in EnumerateStagePanels())
+                p?.SetBackgroundStackDimming(false, 0);
+        }
+
+        /// <summary>
+        /// Applies a vertical dim gradient to every visible stage panel that is behind the current foreground stage.
+        /// </summary>
+        void RefreshStagePanelStackDimming()
+        {
+            int top = HighestActivePanelStage();
+            if (top <= 0 || _lastResponseStage <= 0)
+            {
+                ClearAllPanelStackDimming();
+                return;
+            }
+
+            int front = Mathf.Min(_lastResponseStage, top);
+            for (int s = 1; s <= 5; s++)
+            {
+                ImageGridPanel p = PanelForStage(s);
+                if (p == null)
+                    continue;
+                if (!p.gameObject.activeSelf)
+                {
+                    p.SetBackgroundStackDimming(false, 0);
+                    continue;
+                }
+
+                int steps = front - s;
+                if (steps <= 0)
+                    p.SetBackgroundStackDimming(false, 0);
+                else
+                    p.SetBackgroundStackDimming(true, steps);
+            }
         }
 
         void ActivateThroughStage(int stage)
@@ -668,6 +817,7 @@ namespace Scenes.script
             if (results == null || results.Length == 0)
             {
                 Debug.LogWarning("[ClipSearchFlow] Final stage returned no results.");
+                ClearAllPanelStackDimming();
                 yield break;
             }
 
@@ -678,7 +828,9 @@ namespace Scenes.script
             if (panelStage1 != null)
             {
                 ActivateThroughStage(FinalStage);
+                ConfigurePanelSearchChrome(panelStage1);
                 yield return StartCoroutine(panelStage1.PopulateFromApiResults(results, null));
+                RefreshStagePanelStackDimming();
                 yield break;
             }
 
@@ -722,6 +874,7 @@ namespace Scenes.script
 
                 if (tex != null)
                     finalResultRawImage.texture = tex;
+                ClearAllPanelStackDimming();
                 yield break;
             }
 
@@ -735,7 +888,13 @@ namespace Scenes.script
             if (panelStage3 != null)
             {
                 panelStage3.gameObject.SetActive(true);
+                ConfigurePanelSearchChrome(panelStage3);
                 yield return StartCoroutine(panelStage3.PopulateFromApiResults(results, null));
+                RefreshStagePanelStackDimming();
+            }
+            else
+            {
+                ClearAllPanelStackDimming();
             }
         }
 

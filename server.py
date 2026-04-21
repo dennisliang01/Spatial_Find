@@ -767,8 +767,15 @@ def _search_later_stage(
     selected_ids: list[str],
     query: str,
 ) -> SearchResponse:
-    """Full-index search; `candidate_ids` kept for API compatibility (ignored)."""
+    """Full-index search with exponential decay weighting on selected images.
+    
+    Most recent pick has weight 1.0, each older pick is halved (decay=0.5).
+    The most recent pick is always pinned to position 0 in results regardless
+    of FAISS ranking.
+    """
     _ = candidate_ids  # Unity / POC still send this field
+
+    DECAY = 0.5  # halve weight for each older pick; tune 0.25 (aggressive) to 0.75 (gentle)
 
     t = _encode_text_normalized(query)
     has_text = float(np.linalg.norm(t)) > 1e-8
@@ -782,7 +789,14 @@ def _search_later_stage(
             logger.warning("Stage %d: unknown selected id %r, skipping", stage, sid)
 
     if sel_emb_indices:
-        s = EMBEDDINGS[sel_emb_indices].mean(axis=0, keepdims=True).astype(np.float32)
+        # Exponential decay: oldest → newest, newest weight = 1.0
+        n = len(sel_emb_indices)
+        weights = np.array(
+            [DECAY ** (n - 1 - i) for i in range(n)], dtype=np.float32
+        )
+        weights /= weights.sum()  # normalise to sum to 1
+        sel_matrix = EMBEDDINGS[sel_emb_indices].astype(np.float32)  # (n, 512)
+        s = (sel_matrix * weights[:, np.newaxis]).sum(axis=0, keepdims=True)
         sn = np.linalg.norm(s, axis=1, keepdims=True)
         sn[sn == 0] = 1.0
         s /= sn
@@ -791,7 +805,9 @@ def _search_later_stage(
         s = np.zeros((1, EMBEDDING_DIM), dtype=np.float32)
         has_sel = False
         if has_text:
-            logger.warning("Stage %d: empty selected list; using text-only full-index search", stage)
+            logger.warning(
+                "Stage %d: empty selected list; using text-only full-index search", stage
+            )
 
     if has_text and has_sel:
         qvec = (t + s) / 2.0
@@ -801,7 +817,7 @@ def _search_later_stage(
         qvec = s
     else:
         logger.warning(
-            "Stage %d: no text and no valid selections; zero-vector full-index search (uniform tie-break)",
+            "Stage %d: no text and no valid selections; zero-vector search (uniform tie-break)",
             stage,
         )
         qvec = np.zeros((1, EMBEDDING_DIM), dtype=np.float32)
@@ -810,7 +826,8 @@ def _search_later_stage(
     qn[qn == 0] = 1.0
     qvec = qvec / qn
 
-    n_search = min(k, FAISS_INDEX.ntotal)
+    # Request k+1 so we have room to insert the pinned pick without losing a result
+    n_search = min(k + 1, FAISS_INDEX.ntotal)
     if n_search == 0:
         return SearchResponse(stage=stage, total=0, results=[])
 
@@ -827,7 +844,7 @@ def _search_later_stage(
                 category=IMAGE_RECORDS[int(indices[i])]["category"],
                 probability=uniform_p,
             )
-            for i in range(n_search)
+            for i in range(min(n_search, k))
         ]
         return SearchResponse(stage=stage, total=len(results), results=results)
 
@@ -845,6 +862,34 @@ def _search_later_stage(
                 probability=round(float(probs[rank_pos]), 4),
             )
         )
+
+    # Pin the most recent pick to position 0
+    if selected_ids:
+        most_recent_id = selected_ids[-1]
+        pinned_idx = next(
+            (i for i, r in enumerate(results) if r.id == most_recent_id), None
+        )
+        if pinned_idx is not None:
+            # Move existing entry to front
+            results.insert(0, results.pop(pinned_idx))
+        else:
+            # Not in FAISS results — build from records and prepend
+            rec_idx = RECORD_BY_ID.get(most_recent_id)
+            if rec_idx is not None:
+                rec = IMAGE_RECORDS[rec_idx]
+                results.insert(
+                    0,
+                    ResultRecord(
+                        id=rec["id"],
+                        path=rec["path"],
+                        category=rec["category"],
+                        probability=1.0,
+                    ),
+                )
+
+    # Trim to exactly k results
+    results = results[:k]
+
     return SearchResponse(stage=stage, total=len(results), results=results)
 
 

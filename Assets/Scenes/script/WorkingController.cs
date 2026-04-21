@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -237,7 +238,24 @@ namespace Scenes.script
             }
 
             validHits.Sort((a, b) => a.distance.CompareTo(b.distance));
+            float minDistance = validHits[0].distance;
+            // Stacked world-space CLIP panels each have header navigate BoxColliders; the closest hit can
+            // be a *rear* panel's slab even when the user aims at the front panel's CloseToStart. Prefer any
+            // CloseToStart that lies within a small window behind the closest hit along the ray.
+            const float closeBehindSlabToleranceMeters = 0.35f;
             RaycastHit chosen = validHits[0];
+            float bestCloseDist = float.MaxValue;
+            foreach (RaycastHit h in validHits)
+            {
+                if (!string.Equals(h.collider.gameObject.name, "CloseToStart", StringComparison.Ordinal))
+                    continue;
+                if (h.distance <= minDistance + closeBehindSlabToleranceMeters && h.distance < bestCloseDist)
+                {
+                    bestCloseDist = h.distance;
+                    chosen = h;
+                }
+            }
+
             GameObject hitObject = chosen.collider.gameObject;
 
             Debug.Log($"Processing interaction with: {hitObject.name}");
