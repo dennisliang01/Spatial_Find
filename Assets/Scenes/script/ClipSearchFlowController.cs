@@ -39,15 +39,9 @@ namespace Scenes.script
         [Tooltip("When set, stage image panels start hidden and this root is shown until the user submits queryInput (Enter or submitButton).")]
         public GameObject initialPromptPanel;
 
-        [Tooltip("Optional. Clears queryInput text when clicked.")]
-        public Button clearButton;
-
-        [Tooltip("Optional. Short status line on the prompt (e.g. search errors).")]
-        public TextMeshProUGUI promptStatusLabel;
-
         [Header("Panel Positioning")]
         [Tooltip("World-space Z offset applied between successive stage panels so each next stage appears closer to the camera.")]
-        public float stageDepthStep = 2f;
+        public float stageDepthStep = 1.0f;
 
         string _query;
         int _lastResponseStage;
@@ -67,8 +61,6 @@ namespace Scenes.script
                 submitButton.onClick.AddListener(SubmitQueryFromUi);
             if (queryInput != null)
                 queryInput.onSubmit.AddListener(OnQueryInputSubmit);
-            if (clearButton != null)
-                clearButton.onClick.AddListener(OnClearPromptClicked);
         }
 
         void OnDestroy()
@@ -77,8 +69,6 @@ namespace Scenes.script
                 submitButton.onClick.RemoveListener(SubmitQueryFromUi);
             if (queryInput != null)
                 queryInput.onSubmit.RemoveListener(OnQueryInputSubmit);
-            if (clearButton != null)
-                clearButton.onClick.RemoveListener(OnClearPromptClicked);
         }
 
         void SetupPromptPhysicsAndFocus()
@@ -88,7 +78,6 @@ namespace Scenes.script
 
             EnsureBoxColliderOnRect(queryInput != null ? queryInput.transform as RectTransform : null);
             EnsureBoxColliderOnRect(submitButton != null ? submitButton.transform as RectTransform : null);
-            EnsureBoxColliderOnRect(clearButton != null ? clearButton.transform as RectTransform : null);
         }
 
         static void EnsureBoxColliderOnRect(RectTransform rt)
@@ -106,8 +95,6 @@ namespace Scenes.script
                 queryInput != null ? queryInput.GetComponent<BoxCollider>() : null);
             SyncUiCollider(submitButton != null ? submitButton.transform as RectTransform : null,
                 submitButton != null ? submitButton.GetComponent<BoxCollider>() : null);
-            SyncUiCollider(clearButton != null ? clearButton.transform as RectTransform : null,
-                clearButton != null ? clearButton.GetComponent<BoxCollider>() : null);
         }
 
         static void SyncUiCollider(RectTransform rt, BoxCollider box)
@@ -140,31 +127,16 @@ namespace Scenes.script
             ResyncPromptPhysicsColliders();
         }
 
-        void SetPromptStatus(string message)
-        {
-            if (promptStatusLabel != null)
-                promptStatusLabel.text = message ?? string.Empty;
-        }
-
         void SetPromptInteractable(bool interactable)
         {
             if (queryInput != null)
                 queryInput.interactable = interactable;
             if (submitButton != null)
                 submitButton.interactable = interactable;
-            if (clearButton != null)
-                clearButton.interactable = interactable;
-        }
-
-        void OnClearPromptClicked()
-        {
-            if (queryInput != null)
-                queryInput.text = string.Empty;
         }
 
         void ShowPromptUiAfterStage1Failure(string errorMessage)
         {
-            SetPromptStatus(errorMessage);
             SetPromptInteractable(true);
             ClearAllPanelStackDimming();
             if (initialPromptPanel != null)
@@ -299,7 +271,6 @@ namespace Scenes.script
             if (initialPromptPanel != null)
                 initialPromptPanel.SetActive(true);
 
-            SetPromptStatus(string.Empty);
             SetPromptInteractable(true);
             if (queryInput != null)
                 queryInput.text = string.Empty;
@@ -568,8 +539,6 @@ namespace Scenes.script
                 Debug.LogError("[ClipSearchFlow] Assign ClipSearchApiClient.");
                 return;
             }
-
-            SetPromptStatus(string.Empty);
 
             if (initialPromptPanel != null)
                 initialPromptPanel.SetActive(false);

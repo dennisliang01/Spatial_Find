@@ -33,8 +33,9 @@ namespace Scenes.script
         float worldCanvasSpawnDistanceMeters = 3.5f;
 
         [Tooltip("When true, the grid canvas is world-anchored the first time this panel is enabled, not at shell build. Inactive CLIP stages stay parented until shown.")]
-        [SerializeField]
-        bool anchorWorldSpaceCanvasWhenEnabled = true;
+        // Public so curving helpers (e.g. CurveImageGridPanel) can disable world-space anchoring
+        // before OnEnable runs and detaches the canvas via WorldSpaceCanvasSpawnOnce.
+        public bool anchorWorldSpaceCanvasWhenEnabled = true;
 
         [Header("Aspect Ratio")]
         [Tooltip("When true, forces the canvas height to match targetAspectRatio (width/height) based on computed gridWidth.")]
@@ -563,6 +564,9 @@ namespace Scenes.script
             headerRT.pivot = new Vector2(0.5f, 1);
             headerRT.sizeDelta = new Vector2(0, headerHeight);
             headerRT.anchoredPosition = Vector2.zero;
+            // Sub-Canvas: isolates header rebuilds (close-button highlights, navigate-back hit slab)
+            // from the rest of the panel.
+            AddSubCanvas(headerGO);
             Image headerImg = headerGO.AddComponent<Image>();
             headerImg.color = headerBarColor;
             headerImg.raycastTarget = false;
@@ -575,6 +579,8 @@ namespace Scenes.script
             promptRowRT.pivot = new Vector2(0.5f, 1);
             promptRowRT.sizeDelta = new Vector2(0, promptBarHeight);
             promptRowRT.anchoredPosition = new Vector2(0, -headerHeight);
+            // Sub-Canvas: SetSearchQuery / SetLayerLabel text edits don't dirty the grid batch.
+            AddSubCanvas(promptRowGO);
             HorizontalLayoutGroup promptRowLayout = promptRowGO.AddComponent<HorizontalLayoutGroup>();
             promptRowLayout.padding = new RectOffset(10, 10, 6, 6);
             promptRowLayout.spacing = 8;
@@ -656,6 +662,7 @@ namespace Scenes.script
                 footerRT.pivot = new Vector2(0.5f, 0);
                 footerRT.sizeDelta = new Vector2(0, footerBarHeight);
                 footerRT.anchoredPosition = new Vector2(0, padding.y);
+                AddSubCanvas(footerGO);
                 Image footerImg = footerGO.AddComponent<Image>();
                 footerImg.color = footerBarColor;
                 footerImg.raycastTarget = false;
@@ -702,6 +709,10 @@ namespace Scenes.script
             StretchFill(gridRT);
             gridRT.offsetMin = new Vector2(spacing.x * 0.5f, spacing.y * 0.5f);
             gridRT.offsetMax = new Vector2(-spacing.x * 0.5f, -spacing.y * 0.5f);
+            // Sub-Canvas: per-cell texture swaps during PopulateFromApiResults only re-batch the
+            // grid's own draw call, instead of dirtying header / prompt / footer / dim overlay.
+            // This is the main perf reason for splitting into multiple Canvases.
+            AddSubCanvas(gridGO);
 
             GridLayoutGroup grid = gridGO.AddComponent<GridLayoutGroup>();
             grid.cellSize = cellSize;
@@ -743,6 +754,9 @@ namespace Scenes.script
             GameObject dimGo = CreateUIElement("BackgroundStackDimOverlay", panelGO.transform);
             RectTransform dimRt = dimGo.GetComponent<RectTransform>();
             StretchFill(dimRt);
+            // Sub-Canvas: SetActive toggles + alpha changes for the dim overlay don't invalidate
+            // the grid / chrome batches.
+            AddSubCanvas(dimGo);
             _stackDimOverlay = dimGo.AddComponent<RawImage>();
             _stackDimOverlay.texture = GetOrCreateStackDimSolidTexture();
             _stackDimOverlay.uvRect = new Rect(0f, 0f, 1f, 1f);
@@ -982,6 +996,24 @@ namespace Scenes.script
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>
+        /// Adds a nested <see cref="Canvas"/> so this sub-tree batches its draw calls separately
+        /// from the parent (left at <c>overrideSorting=false</c> so sibling/hierarchy ordering is
+        /// preserved). Also ensures a <see cref="TrackedDeviceGraphicRaycaster"/> is present:
+        /// graphics register with their nearest Canvas, so the root raycaster cannot hit Buttons
+        /// living inside a sub-Canvas — each sub-Canvas needs its own raycaster for XR controller
+        /// pointer events to reach <c>Button.onClick</c> on cells / close / navigate-back slab.
+        /// No <see cref="CanvasScaler"/> is added; the root canvas owns scaling.
+        /// </summary>
+        static Canvas AddSubCanvas(GameObject go)
+        {
+            Canvas existing = go.GetComponent<Canvas>();
+            Canvas canvas = existing != null ? existing : go.AddComponent<Canvas>();
+            if (go.GetComponent<GraphicRaycaster>() == null)
+                go.AddComponent<TrackedDeviceGraphicRaycaster>();
+            return canvas;
         }
     }
 }
