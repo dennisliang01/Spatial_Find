@@ -41,6 +41,11 @@ public class CurvedCanvasDisplay : MonoBehaviour
     [Tooltip("True = wrap toward the viewer (concave, like a curved monitor). False = bulge away (convex).")]
     public bool concave = true;
 
+    public enum VerticalPivot { Center, Bottom, Top }
+
+    [Tooltip("Where on the mesh local Y=0 lies. Center = mesh straddles 0. Bottom = mesh sits on transform y. Top = mesh hangs from transform y. Use Bottom on stage panels you want bottom-aligned.")]
+    public VerticalPivot verticalPivot = VerticalPivot.Center;
+
     [Header("Capture targets")]
     [Tooltip("Source UI Canvas to capture. If left null, the first child Canvas of sourcePanel will be used at runtime.")]
     public Canvas targetCanvas;
@@ -284,6 +289,16 @@ public class CurvedCanvasDisplay : MonoBehaviour
         float radius = width / angleRad;
         float zSign = concave ? -1f : 1f;
 
+        // yMin / yMax control where local Y=0 sits relative to the mesh, so panels with
+        // different heights can share an aligned bottom (or top) at their transform.position.
+        float yMin, yMax;
+        switch (verticalPivot)
+        {
+            case VerticalPivot.Bottom: yMin = 0f;            yMax = height;      break;
+            case VerticalPivot.Top:    yMin = -height;       yMax = 0f;          break;
+            default:                   yMin = -height * 0.5f; yMax = height * 0.5f; break;
+        }
+
         for (int c = 0; c < cols; c++)
         {
             float t = c / (float)(cols - 1);
@@ -291,8 +306,8 @@ public class CurvedCanvasDisplay : MonoBehaviour
             float x = Mathf.Sin(angle) * radius;
             float z = zSign * (radius - Mathf.Cos(angle) * radius);
 
-            verts[c]        = new Vector3(x, -height * 0.5f, z);
-            verts[c + cols] = new Vector3(x,  height * 0.5f, z);
+            verts[c]        = new Vector3(x, yMin, z);
+            verts[c + cols] = new Vector3(x, yMax, z);
 
             uvs[c]          = new Vector2(t, 0f);
             uvs[c + cols]   = new Vector2(t, 1f);

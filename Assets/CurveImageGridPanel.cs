@@ -40,6 +40,9 @@ public class CurveImageGridPanel : MonoBehaviour
     [Tooltip("True = wrap toward the viewer (concave). False = bulge away (convex).")]
     public bool concave = true;
 
+    [Tooltip("Where local Y=0 sits on the mesh. Use Bottom on stage panels you want bottom-aligned across stages with different heights.")]
+    public CurvedCanvasDisplay.VerticalPivot verticalPivot = CurvedCanvasDisplay.VerticalPivot.Bottom;
+
     [Tooltip("Local position of the curved mesh relative to the ImageGridPanel root.")]
     public Vector3 localPosition = Vector3.zero;
 
@@ -98,6 +101,7 @@ public class CurveImageGridPanel : MonoBehaviour
         display.curveAngleDegrees = curveAngleDegrees;
         display.columnSegments = columnSegments;
         display.concave = concave;
+        display.verticalPivot = verticalPivot;
         display.sourcePanel = transform;
         display.renderTextureSize = renderTextureSize;
         if (curvedMaterial != null)
