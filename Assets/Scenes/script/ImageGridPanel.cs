@@ -80,6 +80,14 @@ namespace Scenes.script
         [SerializeField]
         Color footerBarColor = new Color(0.48f, 0.48f, 0.48f, 0.95f);
 
+        [Tooltip("Font size of the search query shown above the grid. Tune larger for stage 90, smaller for later stages.")]
+        [SerializeField]
+        float promptFontSize = 36f;
+
+        [Tooltip("Font size of the footer instruction text below the grid. Tune larger for stage 90, smaller for later stages.")]
+        [SerializeField]
+        float instructionFontSize = 32f;
+
         [Header("Stack depth (CLIP)")]
         [Tooltip("When false, stack dimming is never shown for this panel.")]
         [SerializeField]
@@ -500,9 +508,23 @@ namespace Scenes.script
             float gridHeight = rows * cellSize.y + (rows - 1) * spacing.y;
 
             float headerHeight = 44f;
-            float promptBarHeight = 52f;
             bool showFooterInstruction = clipSearchStageIndex != 5;
-            float footerBarHeight = showFooterInstruction ? 52f : 0f;
+            // Prompt row: HorizontalLayoutGroup padding 6+6, QueryText RT offsets 4+4 — inner
+            // height must fit TMP line height or large fonts clip to nothing.
+            const float promptRowLayoutPadV = 12f;
+            const float queryTextInnerPadV = 8f;
+            const int promptMinWrappedLines = 2;
+            float promptLineH = Mathf.Max(14f, promptFontSize * 1.25f);
+            float promptBarHeight = Mathf.Max(
+                52f,
+                promptRowLayoutPadV + queryTextInnerPadV + promptLineH * promptMinWrappedLines);
+            // Footer bar: StretchFill text uses offsetMin/Max vertical 4+4.
+            const float footerTextInnerPadV = 8f;
+            const int instructionMinWrappedLines = 2;
+            float instructionLineH = Mathf.Max(14f, instructionFontSize * 1.25f);
+            float footerBarHeight = showFooterInstruction
+                ? Mathf.Max(52f, footerTextInnerPadV + instructionLineH * instructionMinWrappedLines)
+                : 0f;
             float topSection = headerHeight + promptBarHeight;
 
             if (useFixedAspectRatio && targetAspectRatio > 0.001f)
@@ -606,7 +628,7 @@ namespace Scenes.script
             queryTextRT.offsetMax = new Vector2(-10f, -4f);
             _queryPromptText = queryTextGO.AddComponent<TextMeshProUGUI>();
             _queryPromptText.text = string.Empty;
-            _queryPromptText.fontSize = 14;
+            _queryPromptText.fontSize = promptFontSize;
             _queryPromptText.color = Color.white;
             _queryPromptText.alignment = TextAlignmentOptions.MidlineLeft;
             _queryPromptText.enableWordWrapping = true;
@@ -662,7 +684,7 @@ namespace Scenes.script
                 footerTextRT.offsetMax = new Vector2(-12f, -4f);
                 _footerInstructionText = footerTextGO.AddComponent<TextMeshProUGUI>();
                 _footerInstructionText.text = footerInstructionText;
-                _footerInstructionText.fontSize = 15;
+                _footerInstructionText.fontSize = instructionFontSize;
                 _footerInstructionText.color = Color.white;
                 _footerInstructionText.alignment = TextAlignmentOptions.Center;
                 _footerInstructionText.enableWordWrapping = true;

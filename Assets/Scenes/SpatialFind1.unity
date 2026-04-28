@@ -440,6 +440,8 @@ MonoBehaviour:
   footerInstructionText: Select the image closest to what you are looking for.
   promptPillColor: {r: 0.38, g: 0.38, b: 0.38, a: 1}
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
+  promptFontSize: 45
+  instructionFontSize: 40
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &231418495
@@ -2597,6 +2599,8 @@ MonoBehaviour:
   footerInstructionText: Select the image closest to what you are looking for.
   promptPillColor: {r: 0.38, g: 0.38, b: 0.38, a: 1}
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
+  promptFontSize: 30
+  instructionFontSize: 20
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &908308117
@@ -2944,6 +2948,8 @@ MonoBehaviour:
   footerInstructionText: Select the image closest to what you are looking for.
   promptPillColor: {r: 0.38, g: 0.38, b: 0.38, a: 1}
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
+  promptFontSize: 40
+  instructionFontSize: 34
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &1141274996
@@ -3042,6 +3048,8 @@ MonoBehaviour:
   footerInstructionText: Select the image closest to what you are looking for.
   promptPillColor: {r: 0.38, g: 0.38, b: 0.38, a: 1}
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
+  promptFontSize: 32
+  instructionFontSize: 28
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &1272238634
@@ -3856,6 +3864,8 @@ MonoBehaviour:
   footerInstructionText: Select the image closest to what you are looking for.
   promptPillColor: {r: 0.38, g: 0.38, b: 0.38, a: 1}
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
+  promptFontSize: 30
+  instructionFontSize: 24
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &1996417261
