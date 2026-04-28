@@ -88,6 +88,11 @@ namespace Scenes.script
         [SerializeField]
         float instructionFontSize = 32f;
 
+        [Header("Return to prompt (×) button")]
+        [Tooltip("Optional override. If null, loads Resources/backwardsArrow (or Resources/UI/backwardsArrow), then procedural fallback.")]
+        [SerializeField]
+        Sprite returnToPromptArrowSprite;
+
         [Header("Stack depth (CLIP)")]
         [Tooltip("When false, stack dimming is never shown for this panel.")]
         [SerializeField]
@@ -727,10 +732,11 @@ namespace Scenes.script
             GameObject closeGO = CreateUIElement("CloseToStart", promptRowGO.transform);
             _closeButtonRT = closeGO.GetComponent<RectTransform>();
             LayoutElement closeLe = closeGO.AddComponent<LayoutElement>();
-            closeLe.minWidth = 44f;
-            closeLe.preferredWidth = 44f;
-            closeLe.minHeight = 44f;
-            closeLe.preferredHeight = 44f;
+            const float closeButtonSize = 64f;
+            closeLe.minWidth = closeButtonSize;
+            closeLe.preferredWidth = closeButtonSize;
+            closeLe.minHeight = closeButtonSize;
+            closeLe.preferredHeight = closeButtonSize;
             closeLe.flexibleWidth = 0f;
             Image closeImg = closeGO.AddComponent<Image>();
             closeImg.color = new Color(0.5f, 0.5f, 0.5f, 1f);
@@ -739,15 +745,16 @@ namespace Scenes.script
             _closeToStartButton.targetGraphic = closeImg;
             _closeToStartButton.transition = Selectable.Transition.None;
 
-            GameObject closeLabelGO = CreateUIElement("Label", closeGO.transform);
+            GameObject closeLabelGO = CreateUIElement("ReturnIcon", closeGO.transform);
             RectTransform closeLabelRT = closeLabelGO.GetComponent<RectTransform>();
             StretchFill(closeLabelRT);
-            TextMeshProUGUI closeTmp = closeLabelGO.AddComponent<TextMeshProUGUI>();
-            closeTmp.text = "\u00D7";
-            closeTmp.fontSize = 28;
-            closeTmp.color = Color.white;
-            closeTmp.alignment = TextAlignmentOptions.Center;
-            closeTmp.raycastTarget = false;
+            closeLabelRT.offsetMin = new Vector2(10f, 10f);
+            closeLabelRT.offsetMax = new Vector2(-10f, -10f);
+            Image closeIcon = closeLabelGO.AddComponent<Image>();
+            closeIcon.sprite = ResolveReturnArrowSprite();
+            closeIcon.color = Color.white;
+            closeIcon.raycastTarget = false;
+            closeIcon.preserveAspect = true;
 
             closeGO.AddComponent<BoxCollider>();
             StartCoroutine(ResyncCloseButtonColliderNextFrame(_closeButtonRT));
@@ -1080,6 +1087,67 @@ namespace Scenes.script
             }
 
             return null;
+        }
+
+        static Sprite s_cachedReturnArrowSprite;
+
+        Sprite ResolveReturnArrowSprite()
+        {
+            if (returnToPromptArrowSprite != null)
+                return returnToPromptArrowSprite;
+            Sprite loaded = Resources.Load<Sprite>("backwardsArrow")
+                ?? Resources.Load<Sprite>("UI/backwardsArrow");
+            if (loaded != null)
+                return loaded;
+            return GetOrCreateReturnArrowSprite();
+        }
+
+        static Sprite GetOrCreateReturnArrowSprite()
+        {
+            if (s_cachedReturnArrowSprite != null)
+                return s_cachedReturnArrowSprite;
+
+            const int w = 48;
+            const int h = 48;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            var px = new Color32[w * h];
+            var clear = new Color32(0, 0, 0, 0);
+            var white = new Color32(255, 255, 255, 255);
+            for (int i = 0; i < px.Length; i++)
+                px[i] = clear;
+
+            void SetPx(int x, int y, Color32 c)
+            {
+                if ((uint)x >= w || (uint)y >= h) return;
+                px[y * w + x] = c;
+            }
+
+            int cy = h / 2;
+            for (int x = 22; x <= 40; x++)
+            {
+                SetPx(x, cy, white);
+                SetPx(x, cy - 1, white);
+                SetPx(x, cy + 1, white);
+            }
+
+            for (int i = 0; i < 10; i++)
+            {
+                int x = 20 - i;
+                for (int dy = -i; dy <= i; dy++)
+                    SetPx(x, cy + dy, white);
+            }
+
+            tex.SetPixels32(px);
+            tex.Apply(false);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+
+            s_cachedReturnArrowSprite = Sprite.Create(
+                tex,
+                new Rect(0, 0, w, h),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            return s_cachedReturnArrowSprite;
         }
 
         static GameObject CreateUIElement(string name, Transform parent)

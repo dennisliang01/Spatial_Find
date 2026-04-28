@@ -291,11 +291,19 @@ namespace Scenes.script
 
         void ConfigurePanelSearchChrome(ImageGridPanel panel)
         {
-            if (panel == null || string.IsNullOrEmpty(_query))
+            if (panel == null)
                 return;
 
-            panel.SetSearchQuery(_query);
+            if (!string.IsNullOrEmpty(_query))
+                panel.SetSearchQuery(_query);
             panel.SetOnCloseToStart(ReturnToStart);
+        }
+
+        void WireSearchChromeThroughStage(int maxStage)
+        {
+            maxStage = Mathf.Clamp(maxStage, 1, FinalStage);
+            for (int s = 1; s <= maxStage; s++)
+                ConfigurePanelSearchChrome(PanelForStage(s));
         }
 
         IEnumerator StartFlowRoutine()
@@ -456,11 +464,14 @@ namespace Scenes.script
                 {
                     ImageGridPanel p = PanelForStage(s);
                     ClipResultRecordDto[] cached = _cachedStageResults[s];
-                    if (p == null || cached == null || cached.Length == 0)
+                    if (p == null)
+                        continue;
+
+                    ConfigurePanelSearchChrome(p);
+                    if (cached == null || cached.Length == 0)
                         continue;
 
                     Action<string> onPick = s == stage ? (id => OnUserPickedImageFromPanel(p, id)) : null;
-                    ConfigurePanelSearchChrome(p);
                     yield return p.PopulateFromApiResults(cached, onPick, reuseLoadedThumbnailsWithoutNetwork: true);
                 }
 
@@ -534,6 +545,8 @@ namespace Scenes.script
             ClearStageResultCache();
 
             ResetUiStateForNewRun();
+            foreach (ImageGridPanel p in EnumerateStagePanels())
+                ConfigurePanelSearchChrome(p);
             StartCoroutine(RunSearchStage(1, Array.Empty<string>(), Array.Empty<string>()));
         }
 
@@ -620,7 +633,7 @@ namespace Scenes.script
             }
 
             ActivateThroughStage(resp.stage);
-            ConfigurePanelSearchChrome(target);
+            WireSearchChromeThroughStage(resp.stage);
             yield return StartCoroutine(target.PopulateFromApiResults(resp.results, id => OnUserPickedImageFromPanel(target, id)));
             target.SetSelectionEnabled(true);
             RefreshStagePanelStackDimming();
@@ -781,7 +794,7 @@ namespace Scenes.script
             if (panelStage1 != null)
             {
                 ActivateThroughStage(FinalStage);
-                ConfigurePanelSearchChrome(panelStage1);
+                WireSearchChromeThroughStage(FinalStage);
                 yield return StartCoroutine(panelStage1.PopulateFromApiResults(results, null));
                 RefreshStagePanelStackDimming();
                 yield break;
