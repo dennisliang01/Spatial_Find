@@ -140,6 +140,9 @@ namespace Scenes.script
         RectTransform _gridLayoutRoot;
         RectTransform _headerBarRT;
         Button _headerNavigateButton;
+        Button _fullPanelNavigateButton;
+        Image _fullPanelNavigateImage;
+        RectTransform _panelBgRT;
         Button _closeToStartButton;
         RectTransform _closeButtonRT;
         int _navStageIndex;
@@ -149,6 +152,8 @@ namespace Scenes.script
         [System.NonSerialized]
         bool _shellBuilt;
         Transform _canvasRoot;
+        [System.NonSerialized]
+        bool _cellsSelectionEnabled = true;
 
         void Awake()
         {
@@ -257,7 +262,8 @@ namespace Scenes.script
         }
 
         /// <summary>
-        /// Makes the header bar clickable to jump back to this CLIP stage (1–4) in <see cref="ClipSearchFlowController"/>.
+        /// Makes the header bar (and, when not the active picking stage, the whole panel) clickable to jump back
+        /// to this CLIP stage (1–4) in <see cref="ClipSearchFlowController"/>.
         /// Pass stage 0 or null callback to remove.
         /// </summary>
         public void SetNavigateBackCallback(int clipSearchStageIndex, Action<int> onHeaderNavigateClicked)
@@ -282,11 +288,75 @@ namespace Scenes.script
                 _headerBarRT = t.GetComponent<RectTransform>();
         }
 
-        void EnsureHeaderNavigateButton()
+        void TryFindPanelBg()
         {
-            if (_headerBarRT == null)
+            if (_panelBgRT != null)
+                return;
+            Transform t = _canvasRoot != null
+                ? _canvasRoot.Find("PanelBG")
+                : transform.Find("ImageGrid_Canvas/PanelBG");
+            if (t != null)
+                _panelBgRT = t.GetComponent<RectTransform>();
+        }
+
+        void DestroyFullPanelNavigate()
+        {
+            if (_fullPanelNavigateButton == null)
+                return;
+            Destroy(_fullPanelNavigateButton.gameObject);
+            _fullPanelNavigateButton = null;
+            _fullPanelNavigateImage = null;
+        }
+
+        void EnsureFullPanelNavigateBackHit()
+        {
+            TryFindPanelBg();
+            if (_panelBgRT == null)
+                return;
+            if (_fullPanelNavigateButton != null)
                 return;
 
+            GameObject hitGo = CreateUIElement("StageNavigateFullPanel", _panelBgRT);
+            hitGo.transform.SetAsFirstSibling();
+            RectTransform hitRt = hitGo.GetComponent<RectTransform>();
+            StretchFill(hitRt);
+            Image hitImg = hitGo.AddComponent<Image>();
+            hitImg.color = new Color(1f, 1f, 1f, 0.02f);
+            hitImg.raycastTarget = false;
+            Button btn = hitGo.AddComponent<Button>();
+            btn.targetGraphic = hitImg;
+            btn.transition = Selectable.Transition.None;
+            btn.interactable = false;
+            _fullPanelNavigateImage = hitImg;
+            _fullPanelNavigateButton = btn;
+            btn.onClick.AddListener(() => _onHeaderNavigateClicked(_navStageIndex));
+            hitGo.AddComponent<BoxCollider>();
+            StartCoroutine(ResyncFullPanelNavigateColliderNextFrame(hitRt));
+        }
+
+        IEnumerator ResyncFullPanelNavigateColliderNextFrame(RectTransform hitRt)
+        {
+            yield return null;
+            if (hitRt == null)
+                yield break;
+            BoxCollider box = hitRt.GetComponent<BoxCollider>();
+            if (box != null)
+                SyncUiCellCollider(hitRt, box);
+        }
+
+        void RefreshFullPanelNavigateInteractivity()
+        {
+            if (_fullPanelNavigateButton == null || _fullPanelNavigateImage == null)
+                return;
+            // Back / inactive stages: cells turn raycast off; enable underlay so the curved sheet
+            // still receives a GraphicRaycast hit anywhere on this panel.
+            bool navigateViaBackdrop = !_cellsSelectionEnabled;
+            _fullPanelNavigateImage.raycastTarget = navigateViaBackdrop;
+            _fullPanelNavigateButton.interactable = navigateViaBackdrop;
+        }
+
+        void EnsureHeaderNavigateButton()
+        {
             if (_navStageIndex <= 0 || _onHeaderNavigateClicked == null)
             {
                 if (_headerNavigateButton != null)
@@ -295,13 +365,28 @@ namespace Scenes.script
                     _headerNavigateButton = null;
                 }
 
+                DestroyFullPanelNavigate();
                 return;
             }
+
+            EnsureFullPanelNavigateBackHit();
+
+            if (_headerBarRT == null)
+                TryFindHeaderBarTransform();
+            if (_headerBarRT == null)
+                return;
 
             if (_headerNavigateButton != null)
             {
                 _headerNavigateButton.onClick.RemoveAllListeners();
                 _headerNavigateButton.onClick.AddListener(() => _onHeaderNavigateClicked(_navStageIndex));
+                if (_fullPanelNavigateButton != null)
+                {
+                    _fullPanelNavigateButton.onClick.RemoveAllListeners();
+                    _fullPanelNavigateButton.onClick.AddListener(() => _onHeaderNavigateClicked(_navStageIndex));
+                }
+
+                RefreshFullPanelNavigateInteractivity();
                 return;
             }
 
@@ -319,6 +404,7 @@ namespace Scenes.script
             btn.onClick.AddListener(() => _onHeaderNavigateClicked(_navStageIndex));
             hitGo.AddComponent<BoxCollider>();
             StartCoroutine(ResyncHeaderNavigateColliderNextFrame(hitRt));
+            RefreshFullPanelNavigateInteractivity();
         }
 
         IEnumerator ResyncHeaderNavigateColliderNextFrame(RectTransform hitRt)
@@ -368,6 +454,7 @@ namespace Scenes.script
 
         public void SetSelectionEnabled(bool enabled)
         {
+            _cellsSelectionEnabled = enabled;
             bool cellsPickable = enabled;
             foreach (CellSlot slot in _cells)
             {
@@ -378,6 +465,8 @@ namespace Scenes.script
                 if (slot.Raw != null)
                     slot.Raw.raycastTarget = on;
             }
+
+            RefreshFullPanelNavigateInteractivity();
         }
 
         /// <summary>
