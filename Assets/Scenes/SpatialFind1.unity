@@ -156,10 +156,10 @@ RectTransform:
   - {fileID: 1888388729}
   m_Father: {fileID: 927814115}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 3.1}
-  m_SizeDelta: {x: 400, y: 200}
+  m_AnchorMin: {x: 0.05, y: 0.14}
+  m_AnchorMax: {x: 0.95, y: 0.72}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &73992286
 MonoBehaviour:
@@ -218,7 +218,7 @@ MonoBehaviour:
   m_HideSoftKeyboard: 0
   m_CharacterValidation: 0
   m_RegexValue: 
-  m_GlobalPointSize: 14
+  m_GlobalPointSize: 48
   m_CharacterLimit: 0
   m_OnEndEdit:
     m_PersistentCalls:
@@ -442,6 +442,7 @@ MonoBehaviour:
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
   promptFontSize: 45
   instructionFontSize: 40
+  returnToPromptArrowSprite: {fileID: 0}
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &231418495
@@ -612,8 +613,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 14
-  m_fontSizeBase: 14
+  m_fontSize: 48
+  m_fontSizeBase: 48
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -746,8 +747,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 14
-  m_fontSizeBase: 14
+  m_fontSize: 48
+  m_fontSizeBase: 48
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -880,8 +881,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 24
-  m_fontSizeBase: 24
+  m_fontSize: 40
+  m_fontSizeBase: 40
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -1695,10 +1696,10 @@ RectTransform:
   - {fileID: 389955257}
   m_Father: {fileID: 927814115}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: -121}
-  m_SizeDelta: {x: 160, y: 30}
+  m_AnchorMin: {x: 0.28, y: 0.05}
+  m_AnchorMax: {x: 0.72, y: 0.12}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &629809960
 MonoBehaviour:
@@ -2601,6 +2602,7 @@ MonoBehaviour:
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
   promptFontSize: 30
   instructionFontSize: 20
+  returnToPromptArrowSprite: {fileID: 0}
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &908308117
@@ -2950,6 +2952,7 @@ MonoBehaviour:
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
   promptFontSize: 40
   instructionFontSize: 34
+  returnToPromptArrowSprite: {fileID: 0}
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &1141274996
@@ -3050,6 +3053,7 @@ MonoBehaviour:
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
   promptFontSize: 32
   instructionFontSize: 28
+  returnToPromptArrowSprite: {fileID: 0}
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &1272238634
@@ -3388,8 +3392,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: -0.5}
-  m_SizeDelta: {x: -20, y: -13}
+  m_AnchoredPosition: {x: 0, y: -2}
+  m_SizeDelta: {x: -56, y: -40}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1888388730
 MonoBehaviour:
@@ -3403,7 +3407,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3312d7739989d2b4e91e6319e9a96d76, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Padding: {x: -8, y: -5, z: -8, w: -5}
+  m_Padding: {x: -28, y: -18, z: -28, w: -18}
   m_Softness: {x: 0, y: 0}
 --- !u!1 &1943714881
 GameObject:
@@ -3710,10 +3714,10 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 927814115}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 109.4}
-  m_SizeDelta: {x: 500, y: 50}
+  m_AnchorMin: {x: 0.05, y: 0.76}
+  m_AnchorMax: {x: 0.95, y: 0.94}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1983577692
 MonoBehaviour:
@@ -3762,8 +3766,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 20
-  m_fontSizeBase: 20
+  m_fontSize: 50
+  m_fontSizeBase: 50
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -3866,6 +3870,7 @@ MonoBehaviour:
   footerBarColor: {r: 0.48, g: 0.48, b: 0.48, a: 0.95}
   promptFontSize: 30
   instructionFontSize: 24
+  returnToPromptArrowSprite: {fileID: 0}
   enableStackDimOverlay: 1
   previousStagesBrightness: 0.2
 --- !u!4 &1996417261
@@ -4132,7 +4137,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 500, y: 300}
+  m_SizeDelta: {x: 1000, y: 500}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &2128878210
 GameObject:

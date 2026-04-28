@@ -246,7 +246,20 @@ public class CurvedCanvasDisplay : MonoBehaviour
         canvasTr.SetParent(uiCamera.transform, worldPositionStays: false);
         canvasTr.localPosition = Vector3.zero;
         canvasTr.localRotation = Quaternion.identity;
-        // ScreenSpaceCamera ignores localScale on the canvas root; UnityUI manages it.
+        // Reparenting with worldPositionStays=false keeps the previous localScale. Source
+        // world-space canvases often use 0.01 so pixels map to meters; left that way, the
+        // capture would be a tiny island on the render texture. Force unit scale for RT fill.
+        canvasTr.localScale = Vector3.one;
+
+        if (canvasTr is RectTransform rootRt && renderTexture != null)
+        {
+            rootRt.anchorMin = Vector2.zero;
+            rootRt.anchorMax = Vector2.zero;
+            rootRt.pivot = new Vector2(0.5f, 0.5f);
+            rootRt.anchoredPosition = Vector2.zero;
+            rootRt.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, renderTexture.width);
+            rootRt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, renderTexture.height);
+        }
 
         targetCanvas.renderMode = RenderMode.ScreenSpaceCamera;
         targetCanvas.worldCamera = uiCamera;
