@@ -13,10 +13,6 @@ namespace Scenes.script
 {
     public class ImageGridPanel : MonoBehaviour
     {
-        [Header("Mode")]
-        [Tooltip("If true, fills the grid with random local images on Start. If false, shell only (for ClipSearchFlowController).")]
-        public bool populateRandomOnStart = true;
-
         [Header("Grid Layout")]
         public int columns = 10;
         public int rows = 9;
@@ -167,14 +163,6 @@ namespace Scenes.script
 
         void Start()
         {
-            if (!populateRandomOnStart)
-                return;
-
-            string imageRoot = ResolveImageRoot();
-            int needed = columns * rows;
-            List<string> imagePaths = CollectImagePaths(imageRoot);
-            List<string> chosen = PickRandom(imagePaths, needed);
-            StartCoroutine(PopulateFromLocalPathsCoroutine(chosen));
         }
 
         public void SetLayerLabel(string text)

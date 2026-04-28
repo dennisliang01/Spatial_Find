@@ -95,7 +95,6 @@ namespace Scenes.script
 
             panel.columns = columns;
             panel.rows = rows;
-            panel.populateRandomOnStart = false;
 
             // Mirror the stage-90 panel's visual/data configuration where possible.
             if (stage90GO != null)

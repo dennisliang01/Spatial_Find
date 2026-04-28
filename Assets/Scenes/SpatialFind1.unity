@@ -418,7 +418,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  populateRandomOnStart: 1
   columns: 10
   rows: 9
   cellSize: {x: 200, y: 140}
@@ -489,8 +488,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: db9ed9e46e15d0742835a8e9e3864248, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  width: 4
-  height: 2.4
+  width: 6
+  height: 3.6
   curveAngleDegrees: 44.8
   columnSegments: 32
   concave: 1
@@ -2575,10 +2574,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  populateRandomOnStart: 0
   columns: 1
   rows: 1
-  cellSize: {x: 800, y: 140}
+  cellSize: {x: 1000, y: 800}
   spacing: {x: 0, y: 0}
   padding: {x: 0, y: 0}
   canvasScale: 0.015
@@ -2589,7 +2587,7 @@ MonoBehaviour:
   imageFolderName: collague_images
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
-  loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
+  loadingCellColor: {r: 0, g: 0, b: 0, a: 1}
   panelBackground: {r: 0, g: 0, b: 0, a: 1}
   cellBackground: {r: 1, g: 1, b: 1, a: 1}
   gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
@@ -2627,8 +2625,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: db9ed9e46e15d0742835a8e9e3864248, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  width: 0.8
-  height: 0.8
+  width: 0.4
+  height: 0.24
   curveAngleDegrees: 25
   columnSegments: 32
   concave: 1
@@ -2921,7 +2919,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  populateRandomOnStart: 0
   columns: 6
   rows: 5
   cellSize: {x: 330, y: 140}
@@ -2973,8 +2970,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: db9ed9e46e15d0742835a8e9e3864248, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  width: 3
-  height: 1.8
+  width: 4
+  height: 2.4
   curveAngleDegrees: 25
   columnSegments: 32
   concave: 1
@@ -3019,7 +3016,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  populateRandomOnStart: 0
   columns: 5
   rows: 2
   cellSize: {x: 400, y: 140}
@@ -3292,7 +3288,7 @@ Transform:
   m_GameObject: {fileID: 1630962560}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.06, y: -0.14836599, z: 5.942455}
+  m_LocalPosition: {x: 0, y: 0, z: 5.942455}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -3833,7 +3829,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  populateRandomOnStart: 0
   columns: 3
   rows: 1
   cellSize: {x: 670, y: 140}
@@ -4431,6 +4426,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 1621290412}
   - {fileID: 2128878219}
+  - {fileID: 1630962563}
   - {fileID: 1876711795}
   - {fileID: 89296770}
   - {fileID: 2006180585}
@@ -4442,5 +4438,4 @@ SceneRoots:
   - {fileID: 1996417261}
   - {fileID: 908308117}
   - {fileID: 9876543301}
-  - {fileID: 1630962563}
   - {fileID: 1059820483}

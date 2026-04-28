@@ -196,24 +196,9 @@ namespace Scenes.script
             if (initialPromptPanel == null)
                 return;
 
-            SetStagePanelsRandomFillDisabledForClipFlow();
             HideAllStageGridPanels();
             ClearFinalResultTextureIfAny();
             initialPromptPanel.SetActive(true);
-        }
-
-        void SetStagePanelsRandomFillDisabledForClipFlow()
-        {
-            if (panelStage90 != null)
-                panelStage90.populateRandomOnStart = false;
-            if (panelStage30 != null)
-                panelStage30.populateRandomOnStart = false;
-            if (panelStage10 != null)
-                panelStage10.populateRandomOnStart = false;
-            if (panelStage3 != null)
-                panelStage3.populateRandomOnStart = false;
-            if (panelStage1 != null)
-                panelStage1.populateRandomOnStart = false;
         }
 
         void HideAllStageGridPanels()
@@ -264,7 +249,6 @@ namespace Scenes.script
             }
 
             ClearFinalResultTextureIfAny();
-            SetStagePanelsRandomFillDisabledForClipFlow();
             HideAllStageGridPanels();
             ClearAllPanelStackDimming();
 
