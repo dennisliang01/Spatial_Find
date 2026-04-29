@@ -1,19 +1,44 @@
-using UnityEngine;
-using UnityEngine.XR;
+using System;
 using System.Collections.Generic;
+using TMPro;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using UnityEngine.XR;
+using UnityEngine.XR.Interaction.Toolkit;
 
 namespace Scenes.script
 {
     public class WorkingController : MonoBehaviour
     {
         public bool isLeftController = true;
+
+        [SerializeField]
+        [Tooltip("If unset, resolved once at runtime (same flow as PCInputController).")]
+        private ClipSearchFlowController clipSearchFlowController;
+
         private LineRenderer laser;
         private bool triggerWasPressed = false;
+
+        void Awake()
+        {
+            if (clipSearchFlowController == null)
+                clipSearchFlowController = FindObjectOfType<ClipSearchFlowController>();
+        }
 
         void Start()
         {
             try
             {
+                // XRInteractorLineVisual owns the LineRenderer on this object; do not replace it.
+                if (GetComponent<XRInteractorLineVisual>() != null)
+                {
+                    laser = null;
+                    Debug.Log((isLeftController ? "Left" : "Right") +
+                        " WorkingController: using XRInteractorLineVisual ray (custom laser skipped).");
+                    return;
+                }
+
                 laser = GetComponent<LineRenderer>();
                 if (laser == null)
                     laser = gameObject.AddComponent<LineRenderer>();
@@ -213,7 +238,24 @@ namespace Scenes.script
             }
 
             validHits.Sort((a, b) => a.distance.CompareTo(b.distance));
+            float minDistance = validHits[0].distance;
+            // Stacked world-space CLIP panels each have header navigate BoxColliders; the closest hit can
+            // be a *rear* panel's slab even when the user aims at the front panel's CloseToStart. Prefer any
+            // CloseToStart that lies within a small window behind the closest hit along the ray.
+            const float closeBehindSlabToleranceMeters = 0.35f;
             RaycastHit chosen = validHits[0];
+            float bestCloseDist = float.MaxValue;
+            foreach (RaycastHit h in validHits)
+            {
+                if (!string.Equals(h.collider.gameObject.name, "CloseToStart", StringComparison.Ordinal))
+                    continue;
+                if (h.distance <= minDistance + closeBehindSlabToleranceMeters && h.distance < bestCloseDist)
+                {
+                    bestCloseDist = h.distance;
+                    chosen = h;
+                }
+            }
+
             GameObject hitObject = chosen.collider.gameObject;
 
             Debug.Log($"Processing interaction with: {hitObject.name}");
@@ -222,6 +264,7 @@ namespace Scenes.script
             SubPanelController subPanel = hitObject.GetComponent<SubPanelController>();
             if (subPanel != null)
             {
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 subPanel.SelectPanel();
 
                 MeshController mainPanel = FindMainPanel(hitObject.transform);
@@ -255,6 +298,7 @@ namespace Scenes.script
             MeshController meshController = hitObject.GetComponent<MeshController>();
             if (meshController != null)
             {
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 if (!meshController.hasChild)
                 {
                     Debug.Log("Select a subpanel to proceed");
@@ -263,11 +307,57 @@ namespace Scenes.script
                 {
                     meshController.RemoveChildPlane();
                 }
+                return;
             }
-            else
+
+            ImageTile imageTile = hitObject.GetComponent<ImageTile>();
+            if (imageTile == null)
+                imageTile = hitObject.GetComponentInParent<ImageTile>();
+
+            if (imageTile != null && !string.IsNullOrEmpty(imageTile.imageId))
             {
-                Debug.LogWarning($"No MeshController found on {hitObject.name}");
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
+                if (clipSearchFlowController != null)
+                {
+                    ImageGridPanel grid = imageTile.GetComponentInParent<ImageGridPanel>();
+                    clipSearchFlowController.OnUserPickedImageFromPanel(grid, imageTile.imageId);
+                }
+                else
+                {
+                    Debug.LogWarning("WorkingController: ClipSearchFlowController not found; cannot select image.");
+                }
+
+                return;
             }
+
+            TMP_InputField tmpInput = hitObject.GetComponent<TMP_InputField>()
+                ?? hitObject.GetComponentInParent<TMP_InputField>();
+            if (tmpInput != null)
+            {
+                if (tmpInput.interactable)
+                {
+                    EventSystem es = EventSystem.current;
+                    if (es != null)
+                        es.SetSelectedGameObject(tmpInput.gameObject);
+                    tmpInput.ActivateInputField();
+                    var focusComp = tmpInput.GetComponent<TmpInputFieldXrPointerFocus>();
+                    if (focusComp != null)
+                        focusComp.BeginRetainPhysicsSelection();
+                }
+                return;
+            }
+
+            Button uiButton = hitObject.GetComponent<Button>()
+                ?? hitObject.GetComponentInParent<Button>();
+            if (uiButton != null)
+            {
+                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
+                if (uiButton.interactable)
+                    uiButton.onClick.Invoke();
+                return;
+            }
+
+            Debug.LogWarning($"No MeshController or ImageTile on {hitObject.name}");
         }
 
         InputDevice GetInputDevice()

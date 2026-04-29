@@ -1,0 +1,25 @@
+# CLIP + FAISS image server (server.py)
+#
+# Install CLIP from GitHub (not on PyPI):
+#   pip install git+https://github.com/openai/CLIP.git
+#
+# For NVIDIA GPU embeddings, install a CUDA-enabled PyTorch *before* CLIP
+# (CLIP pulls torch if missing — often CPU-only). Use the command from:
+#   https://pytorch.org/get-started/locally/
+# Example (CUDA 12.x, pip):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# Verify:  python -c "import torch; print(torch.cuda.is_available())"
+#
+# FAISS: GPU build (optional, separate from PyTorch CUDA):
+#   pip install faiss-gpu
+# CPU only:
+#   pip install faiss-cpu
+
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+numpy>=1.24.0
+pillow>=10.0.0
+pydantic>=2.0.0
+faiss-cpu>=1.7.4
+# torch / torchvision are installed as dependencies of the CLIP package above
+kaggle>=2.0.0
