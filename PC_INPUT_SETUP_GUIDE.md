@@ -2,6 +2,8 @@
 
 This guide explains how to set up and test the PC mouse-click input system for the SpatialFind1 scene.
 
+**Standalone builds (no Editor):** use **`LaunchSpatialFind.cmd`** so the Python server and game start together; see [DISTRIBUTION_STANDALONE.md](DISTRIBUTION_STANDALONE.md).
+
 ## What Was Added
 
 Three new C# scripts enable mouse-click testing without a VR headset:

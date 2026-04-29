@@ -126,3 +126,25 @@ clip_cache_meta.json
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local env / secrets (track .env.example explicitly if you add one)
+.env
+.env.local
+
+# Launcher runtime logs (LaunchSpatialFind.ps1 → logs/)
+logs/
+
+# Packaged Python server (PyInstaller / Nuitka)
+dist/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini

@@ -502,7 +502,10 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
+  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
+    type: 3}
+  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -2643,7 +2646,10 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
+  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
+    type: 3}
+  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -2891,7 +2897,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayOrigin: {fileID: 539902411}
+  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
+    type: 3}
+  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   curvedPanel: {fileID: 1059820478}
   maxDistance: 10
@@ -2993,7 +3002,10 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
+  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
+    type: 3}
+  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -3094,7 +3106,10 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
+  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
+    type: 3}
+  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -3911,7 +3926,10 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
+  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
+    type: 3}
+  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2

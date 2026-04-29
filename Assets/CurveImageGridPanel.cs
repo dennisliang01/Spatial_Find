@@ -57,11 +57,17 @@ public class CurveImageGridPanel : MonoBehaviour
     public Material curvedMaterial;
 
     [Header("Input")]
-    [Tooltip("Controller transform whose forward direction casts the picking ray. If null, copied from any existing CurvedPanelInputForwarder in the scene.")]
+    [Tooltip("Controller transform whose forward direction casts the picking ray (e.g. right controller). If null, copied from any existing CurvedPanelInputForwarder in the scene.")]
     public Transform rayOrigin;
 
-    [Tooltip("Trigger action used to fire clicks. If null, copied from any existing CurvedPanelInputForwarder in the scene.")]
+    [Tooltip("Optional left controller. If null, uses FindGameObjectWithTag(\"LeftHand\") when that tag exists.")]
+    public Transform leftRayOrigin;
+
+    [Tooltip("Trigger action for the right hand. If null, copied from any existing CurvedPanelInputForwarder in the scene.")]
     public InputActionReference triggerAction;
+
+    [Tooltip("Optional left-hand trigger / Activate Value. If null, copied from an existing forwarder when set there; otherwise left hand uses legacy XR trigger only.")]
+    public InputActionReference leftTriggerAction;
 
     [Tooltip("Optional layer mask for the picking ray.")]
     public LayerMask layerMask = ~0;
@@ -116,7 +122,9 @@ public class CurveImageGridPanel : MonoBehaviour
         var forwarder = _curvedDisplayGo.AddComponent<CurvedPanelInputForwarder>();
         forwarder.curvedPanel = _curvedDisplayGo.GetComponent<CurvedCanvasInteractor>();
         forwarder.rayOrigin = rayOrigin;
+        forwarder.leftRayOrigin = leftRayOrigin;
         forwarder.triggerAction = triggerAction;
+        forwarder.leftTriggerAction = leftTriggerAction;
         forwarder.maxDistance = rayMaxDistance;
         forwarder.layerMask = layerMask;
     }
@@ -132,5 +140,7 @@ public class CurveImageGridPanel : MonoBehaviour
         if (existing == null) return;
         if (rayOrigin == null) rayOrigin = existing.rayOrigin;
         if (triggerAction == null) triggerAction = existing.triggerAction;
+        if (leftRayOrigin == null) leftRayOrigin = existing.leftRayOrigin;
+        if (leftTriggerAction == null) leftTriggerAction = existing.leftTriggerAction;
     }
 }
