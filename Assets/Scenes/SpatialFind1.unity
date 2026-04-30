@@ -1699,10 +1699,10 @@ RectTransform:
   - {fileID: 389955257}
   m_Father: {fileID: 927814115}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.28, y: 0.05}
-  m_AnchorMax: {x: 0.72, y: 0.12}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: -258}
+  m_SizeDelta: {x: 440.00003, y: 70}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &629809960
 MonoBehaviour:
@@ -1723,7 +1723,7 @@ MonoBehaviour:
     m_SelectOnDown: {fileID: 0}
     m_SelectOnLeft: {fileID: 0}
     m_SelectOnRight: {fileID: 0}
-  m_Transition: 1
+  m_Transition: 3
   m_Colors:
     m_NormalColor: {r: 1, g: 1, b: 1, a: 1}
     m_HighlightedColor: {r: 0.9607843, g: 0.9607843, b: 0.9607843, a: 1}
@@ -2749,7 +2749,7 @@ GameObject:
   - component: {fileID: 1059820478}
   - component: {fileID: 1059820484}
   m_Layer: 0
-  m_Name: CurvedImagePanel
+  m_Name: CurvedPromptWindow
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -4154,8 +4154,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 1000, y: 500}
+  m_AnchoredPosition: {x: 0, y: 0.43}
+  m_SizeDelta: {x: 1000, y: 600}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &2128878210
 GameObject:
@@ -4452,7 +4452,6 @@ MonoBehaviour:
   panelStage10: {fileID: 1272238633}
   panelStage3: {fileID: 1996417260}
   panelStage1: {fileID: 908308116}
-  finalResultRawImage: {fileID: 0}
   queryInput: {fileID: 73992286}
   submitButton: {fileID: 629809960}
   debugQuery: 
@@ -4471,10 +4470,10 @@ SceneRoots:
   - {fileID: 2006180585}
   - {fileID: 1411705922}
   - {fileID: 2086203672}
+  - {fileID: 1059820483}
   - {fileID: 231418495}
   - {fileID: 1141274996}
   - {fileID: 1272238634}
   - {fileID: 1996417261}
   - {fileID: 908308117}
   - {fileID: 9876543301}
-  - {fileID: 1059820483}

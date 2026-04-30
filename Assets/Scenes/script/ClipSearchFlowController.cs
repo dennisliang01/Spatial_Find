@@ -22,9 +22,6 @@ namespace Scenes.script
         public ImageGridPanel panelStage3;
         public ImageGridPanel panelStage1;
 
-        [Tooltip("Optional. Legacy fallback for displaying the single final result if panelStage1 is not assigned.")]
-        public RawImage finalResultRawImage;
-
         const int FinalStage = 5;
 
         public TMP_InputField queryInput;
@@ -197,7 +194,6 @@ namespace Scenes.script
                 return;
 
             HideAllStageGridPanels();
-            ClearFinalResultTextureIfAny();
             initialPromptPanel.SetActive(true);
         }
 
@@ -213,15 +209,6 @@ namespace Scenes.script
                 panelStage3.gameObject.SetActive(false);
             if (panelStage1 != null)
                 panelStage1.gameObject.SetActive(false);
-        }
-
-        void ClearFinalResultTextureIfAny()
-        {
-            if (finalResultRawImage != null && finalResultRawImage.texture != null)
-            {
-                Destroy(finalResultRawImage.texture);
-                finalResultRawImage.texture = null;
-            }
         }
 
         /// <summary>
@@ -248,7 +235,6 @@ namespace Scenes.script
                 p.SetOnCloseToStart(null);
             }
 
-            ClearFinalResultTextureIfAny();
             HideAllStageGridPanels();
             ClearAllPanelStackDimming();
 
@@ -565,12 +551,6 @@ namespace Scenes.script
 
             SetAllPanelsNonInteractive();
 
-            if (finalResultRawImage != null && finalResultRawImage.texture != null)
-            {
-                Destroy(finalResultRawImage.texture);
-                finalResultRawImage.texture = null;
-            }
-
             ClearAllPanelStackDimming();
         }
 
@@ -800,49 +780,6 @@ namespace Scenes.script
                 yield break;
             }
 
-            // Legacy fallback: use a standalone RawImage if provided.
-            if (finalResultRawImage != null)
-            {
-                if (panelStage90 != null)
-                    panelStage90.gameObject.SetActive(false);
-                if (panelStage30 != null)
-                    panelStage30.gameObject.SetActive(false);
-                if (panelStage10 != null)
-                    panelStage10.gameObject.SetActive(false);
-                if (panelStage3 != null)
-                    panelStage3.gameObject.SetActive(false);
-
-                if (finalResultRawImage.texture != null)
-                {
-                    Destroy(finalResultRawImage.texture);
-                    finalResultRawImage.texture = null;
-                }
-
-                Texture2D tex = null;
-                ImageGridPanel rootRef = panelStage90 != null ? panelStage90 : panelStage30 ?? panelStage10;
-                if (rootRef != null && rootRef.TryResolveDatasetFile(rec.path, out string localPath))
-                    tex = LoadTextureFromDisk(localPath);
-
-                if (tex == null && apiClient != null && !string.IsNullOrEmpty(rec.path))
-                {
-                    string url = apiClient.GetImageUrl(rec.path);
-                    using (UnityWebRequest req = UnityWebRequestTexture.GetTexture(url))
-                    {
-                        yield return req.SendWebRequest();
-#if UNITY_2020_1_OR_NEWER
-                        if (req.result == UnityWebRequest.Result.Success)
-#else
-                        if (!req.isNetworkError && !req.isHttpError)
-#endif
-                            tex = DownloadHandlerTexture.GetContent(req);
-                    }
-                }
-
-                if (tex != null)
-                    finalResultRawImage.texture = tex;
-                ClearAllPanelStackDimming();
-                yield break;
-            }
 
             // Last-ditch fallback: reuse panelStage3 to show the single result.
             if (panelStage90 != null)
