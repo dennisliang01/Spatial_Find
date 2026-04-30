@@ -70,8 +70,13 @@ namespace Scenes.script
 
         void SetupPromptPhysicsAndFocus()
         {
-            if (queryInput != null && queryInput.GetComponent<TmpInputFieldXrPointerFocus>() == null)
-                queryInput.gameObject.AddComponent<TmpInputFieldXrPointerFocus>();
+            if (queryInput != null)
+            {
+                TmpInputFieldXrPointerFocus focus = queryInput.GetComponent<TmpInputFieldXrPointerFocus>();
+                if (focus == null)
+                    focus = queryInput.gameObject.AddComponent<TmpInputFieldXrPointerFocus>();
+                focus.xrClickRedirectButton = submitButton;
+            }
 
             EnsureBoxColliderOnRect(queryInput != null ? queryInput.transform as RectTransform : null);
             EnsureBoxColliderOnRect(submitButton != null ? submitButton.transform as RectTransform : null);
@@ -184,6 +189,18 @@ namespace Scenes.script
             }
         }
 
+        void Update()
+        {
+            if (!Input.GetKeyDown(KeyCode.P))
+                return;
+
+            // No-op while the prompt root is visible (assigned scenes only).
+            if (initialPromptPanel != null && initialPromptPanel.activeInHierarchy)
+                return;
+
+            ReturnToStart();
+        }
+
         /// <summary>
         /// When <see cref="initialPromptPanel"/> is assigned, hides all stage grids and shows the prompt UI.
         /// Also avoids <see cref="ImageGridPanel"/> random-fill on first enable of stage 90 after submit.
@@ -217,7 +234,6 @@ namespace Scenes.script
         public void ReturnToStart()
         {
             StopAllCoroutines();
-            TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
 
             _busy = false;
             _query = string.Empty;
@@ -250,8 +266,8 @@ namespace Scenes.script
                 ResyncPromptPhysicsColliders();
                 StartCoroutine(ResyncPromptCollidersNextFrame());
             }
-
-            StartCoroutine(RefocusPromptNextFrame());
+            // queryInput's TmpInputFieldXrPointerFocus reapplies selection in LateUpdate while
+            // the field is active in the hierarchy, so no manual refocus call is needed here.
         }
 
         IEnumerable<ImageGridPanel> EnumerateStagePanels()
@@ -261,18 +277,6 @@ namespace Scenes.script
             yield return panelStage10;
             yield return panelStage3;
             yield return panelStage1;
-        }
-
-        IEnumerator RefocusPromptNextFrame()
-        {
-            yield return null;
-            if (queryInput == null || !queryInput.gameObject.activeInHierarchy)
-                yield break;
-            if (initialPromptPanel != null && !initialPromptPanel.activeSelf)
-                yield break;
-
-            queryInput.Select();
-            queryInput.ActivateInputField();
         }
 
         void ConfigurePanelSearchChrome(ImageGridPanel panel)
@@ -295,12 +299,6 @@ namespace Scenes.script
         IEnumerator StartFlowRoutine()
         {
             yield return null;
-            if (initialPromptPanel != null && initialPromptPanel.activeSelf && queryInput != null)
-            {
-                queryInput.Select();
-                queryInput.ActivateInputField();
-            }
-
             if (submitDebugQueryOnStart && initialPromptPanel == null && !string.IsNullOrWhiteSpace(debugQuery))
                 BeginSearch(debugQuery.Trim());
         }

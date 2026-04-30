@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Scenes.script;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -106,6 +107,12 @@ public class CurvedCanvasInteractor : MonoBehaviour
         foreach (var raycaster in raycasters)
             raycaster.Raycast(pointerData, _scratch);
 
+        // Merging hits from multiple GraphicRaycasters leaves result order undefined. Unity's EventSystem
+        // sorts by canvas layer / order / graphic depth / distance so the visually topmost element wins;
+        // otherwise the query field often appears first and swallows clicks meant for Search.
+        if (_scratch.Count > 1)
+            _scratch.Sort(CompareRaycastResults);
+
         GameObject newTarget = _scratch.Count > 0 ? _scratch[0].gameObject : null;
 
         if (newTarget != _hovered)
@@ -119,6 +126,13 @@ public class CurvedCanvasInteractor : MonoBehaviour
 
         if (clicked && newTarget != null)
         {
+            // A click on a TMP_InputField with a configured submit redirect (e.g. the prompt's
+            // Search button) runs the redirect instead of focusing the field. Keeps the prompt
+            // window's "click anywhere = search" convention consistent across both controllers.
+            TmpInputFieldXrPointerFocus focus = newTarget.GetComponentInParent<TmpInputFieldXrPointerFocus>();
+            if (focus != null && focus.TryInvokeXrClickRedirect())
+                return;
+
             // The hit target is usually a child Graphic (e.g. a Button "Text" label or a
             // TMP_InputField placeholder). ExecuteHierarchy walks up parents to find the
             // actual handler (Button, TMP_InputField, etc.) - same approach as Unity's
@@ -147,5 +161,16 @@ public class CurvedCanvasInteractor : MonoBehaviour
     void OnDisable()
     {
         ClearHover();
+    }
+
+    static int CompareRaycastResults(RaycastResult a, RaycastResult b)
+    {
+        int cmp = b.sortingLayer.CompareTo(a.sortingLayer);
+        if (cmp != 0) return cmp;
+        cmp = b.sortingOrder.CompareTo(a.sortingOrder);
+        if (cmp != 0) return cmp;
+        cmp = b.depth.CompareTo(a.depth);
+        if (cmp != 0) return cmp;
+        return a.distance.CompareTo(b.distance);
     }
 }

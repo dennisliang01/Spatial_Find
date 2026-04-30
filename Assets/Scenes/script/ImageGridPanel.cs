@@ -603,14 +603,19 @@ namespace Scenes.script
 
             float headerHeight = 44f;
             bool showFooterInstruction = clipSearchStageIndex != 5;
+            // The Return-to-prompt button lives in the prompt row. Make it large because the
+            // row's world-space size shrinks on later stage panels and a small target is hard to
+            // hit with a controller laser.
+            const float closeButtonSize = 140f;
             // Prompt row: HorizontalLayoutGroup padding 6+6, QueryText RT offsets 4+4 — inner
-            // height must fit TMP line height or large fonts clip to nothing.
+            // height must fit TMP line height or large fonts clip to nothing. Floor also has to
+            // fit the close button so the layout group doesn't squash it.
             const float promptRowLayoutPadV = 12f;
             const float queryTextInnerPadV = 8f;
             const int promptMinWrappedLines = 2;
             float promptLineH = Mathf.Max(14f, promptFontSize * 1.25f);
             float promptBarHeight = Mathf.Max(
-                52f,
+                closeButtonSize + promptRowLayoutPadV,
                 promptRowLayoutPadV + queryTextInnerPadV + promptLineH * promptMinWrappedLines);
             // Footer bar: StretchFill text uses offsetMin/Max vertical 4+4.
             const float footerTextInnerPadV = 8f;
@@ -732,12 +737,12 @@ namespace Scenes.script
             GameObject closeGO = CreateUIElement("CloseToStart", promptRowGO.transform);
             _closeButtonRT = closeGO.GetComponent<RectTransform>();
             LayoutElement closeLe = closeGO.AddComponent<LayoutElement>();
-            const float closeButtonSize = 64f;
             closeLe.minWidth = closeButtonSize;
             closeLe.preferredWidth = closeButtonSize;
             closeLe.minHeight = closeButtonSize;
             closeLe.preferredHeight = closeButtonSize;
             closeLe.flexibleWidth = 0f;
+            closeLe.flexibleHeight = 0f;
             Image closeImg = closeGO.AddComponent<Image>();
             closeImg.color = new Color(0.5f, 0.5f, 0.5f, 1f);
             closeImg.raycastTarget = true;

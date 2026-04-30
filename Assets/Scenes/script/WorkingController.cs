@@ -256,6 +256,17 @@ namespace Scenes.script
                 }
             }
 
+            // A click on the prompt's TMP_InputField runs the configured submit redirect (Search
+            // button) instead of focusing the field. Mirrors the curved-canvas path in
+            // CurvedCanvasInteractor so both rendering modes behave the same.
+            TMP_InputField hitField = chosen.collider.GetComponentInParent<TMP_InputField>();
+            if (hitField != null)
+            {
+                TmpInputFieldXrPointerFocus focus = hitField.GetComponent<TmpInputFieldXrPointerFocus>();
+                if (focus != null && focus.TryInvokeXrClickRedirect())
+                    return;
+            }
+
             GameObject hitObject = chosen.collider.gameObject;
 
             Debug.Log($"Processing interaction with: {hitObject.name}");
@@ -264,7 +275,6 @@ namespace Scenes.script
             SubPanelController subPanel = hitObject.GetComponent<SubPanelController>();
             if (subPanel != null)
             {
-                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 subPanel.SelectPanel();
 
                 MeshController mainPanel = FindMainPanel(hitObject.transform);
@@ -298,7 +308,6 @@ namespace Scenes.script
             MeshController meshController = hitObject.GetComponent<MeshController>();
             if (meshController != null)
             {
-                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 if (!meshController.hasChild)
                 {
                     Debug.Log("Select a subpanel to proceed");
@@ -316,7 +325,6 @@ namespace Scenes.script
 
             if (imageTile != null && !string.IsNullOrEmpty(imageTile.imageId))
             {
-                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 if (clipSearchFlowController != null)
                 {
                     ImageGridPanel grid = imageTile.GetComponentInParent<ImageGridPanel>();
@@ -340,9 +348,6 @@ namespace Scenes.script
                     if (es != null)
                         es.SetSelectedGameObject(tmpInput.gameObject);
                     tmpInput.ActivateInputField();
-                    var focusComp = tmpInput.GetComponent<TmpInputFieldXrPointerFocus>();
-                    if (focusComp != null)
-                        focusComp.BeginRetainPhysicsSelection();
                 }
                 return;
             }
@@ -351,7 +356,6 @@ namespace Scenes.script
                 ?? hitObject.GetComponentInParent<Button>();
             if (uiButton != null)
             {
-                TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
                 if (uiButton.interactable)
                     uiButton.onClick.Invoke();
                 return;

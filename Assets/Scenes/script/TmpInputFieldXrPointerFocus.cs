@@ -1,60 +1,34 @@
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace Scenes.script
 {
     /// <summary>
-    /// Ensures a <see cref="TMP_InputField"/> receives focus when clicked with the XR ray / mouse pointer.
-    /// Add to the same GameObject as the TMP_InputField (or let <see cref="ClipSearchFlowController"/> add it at runtime when setup runs).
+    /// Keeps a <see cref="TMP_InputField"/> focused while it is active in the hierarchy. The XR
+    /// EventSystem regularly deselects fields because the tracked UI ray differs from the physics
+    /// ray that opened them; <see cref="LateUpdate"/> reasserts selection so keyboard input keeps
+    /// reaching TMP. Optionally redirects an XR pointer click on the field to a target Button, so
+    /// the prompt window can route a controller click on the query field straight to Search.
     /// </summary>
     [RequireComponent(typeof(TMP_InputField))]
-    public sealed class TmpInputFieldXrPointerFocus : MonoBehaviour, IPointerDownHandler
+    public sealed class TmpInputFieldXrPointerFocus : MonoBehaviour
     {
-        TMP_InputField _field;
+        [Tooltip("Optional: when an XR pointer click lands on this field, invoke this button instead of activating the field for typing. " +
+                 "Used by the prompt window so a controller click on the query field acts like clicking Search.")]
+        public Button xrClickRedirectButton;
 
-        /// <summary>
-        /// Physics ray (<see cref="WorkingController"/>) activates the field, then XR/studio EventSystem often deselects
-        /// on the same or next frame because the tracked UI ray is not the same as the physics ray.
-        /// While true, <see cref="LateUpdate"/> re-applies selection so keyboard input can reach TMP.
-        /// </summary>
-        bool _retainPhysicsSelection;
-        static TmpInputFieldXrPointerFocus _physicsRetentionInstance;
+        TMP_InputField _field;
 
         void Awake()
         {
             _field = GetComponent<TMP_InputField>();
         }
 
-        void OnDisable()
-        {
-            if (_physicsRetentionInstance == this)
-            {
-                _physicsRetentionInstance = null;
-                _retainPhysicsSelection = false;
-            }
-        }
-
-        /// <summary>Call from <c>WorkingController</c> after physics hit activates this field.</summary>
-        public void BeginRetainPhysicsSelection()
-        {
-            if (_physicsRetentionInstance != null && _physicsRetentionInstance != this)
-                _physicsRetentionInstance._retainPhysicsSelection = false;
-            _physicsRetentionInstance = this;
-            _retainPhysicsSelection = true;
-        }
-
-        /// <summary>Stop re-applying selection (e.g. user used another UI via physics ray).</summary>
-        public static void EndPhysicsRetentionIfAny()
-        {
-            if (_physicsRetentionInstance != null)
-                _physicsRetentionInstance._retainPhysicsSelection = false;
-            _physicsRetentionInstance = null;
-        }
-
         void LateUpdate()
         {
-            if (!_retainPhysicsSelection || _field == null || !_field.interactable)
+            if (_field == null || !_field.interactable)
                 return;
             EventSystem es = EventSystem.current;
             if (es == null)
@@ -65,13 +39,19 @@ namespace Scenes.script
             _field.ActivateInputField();
         }
 
-        public void OnPointerDown(PointerEventData eventData)
+        /// <summary>
+        /// Invokes <see cref="xrClickRedirectButton"/> if it is configured and active. XR click
+        /// forwarders call this so a controller click on the field runs the associated submit
+        /// action instead of activating the field.
+        /// </summary>
+        /// <returns>True if the redirect button was invoked.</returns>
+        public bool TryInvokeXrClickRedirect()
         {
-            if (_field == null || !_field.interactable)
-                return;
-
-            _field.ActivateInputField();
-            BeginRetainPhysicsSelection();
+            Button btn = xrClickRedirectButton;
+            if (btn == null || !btn.isActiveAndEnabled || !btn.interactable)
+                return false;
+            btn.onClick.Invoke();
+            return true;
         }
     }
 }

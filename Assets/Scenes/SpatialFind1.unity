@@ -158,7 +158,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.05, y: 0.14}
   m_AnchorMax: {x: 0.95, y: 0.72}
-  m_AnchoredPosition: {x: 0, y: 0}
+  m_AnchoredPosition: {x: 0, y: 45}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &73992286
@@ -428,7 +428,7 @@ MonoBehaviour:
   anchorWorldSpaceCanvasWhenEnabled: 1
   useFixedAspectRatio: 1
   targetAspectRatio: 1.777
-  imageFolderName: collague_images
+  imageFolderName: dogs_vs_cats
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
@@ -502,10 +502,7 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
-  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
-    type: 3}
-  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -884,8 +881,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 40
-  m_fontSizeBase: 40
+  m_fontSize: 50
+  m_fontSizeBase: 50
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -1701,8 +1698,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: -258}
-  m_SizeDelta: {x: 440.00003, y: 70}
+  m_AnchoredPosition: {x: 0, y: -202}
+  m_SizeDelta: {x: 440.00003, y: 80}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &629809960
 MonoBehaviour:
@@ -1842,7 +1839,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &758416240
 Transform:
   m_ObjectHideFlags: 0
@@ -2591,7 +2588,7 @@ MonoBehaviour:
   anchorWorldSpaceCanvasWhenEnabled: 1
   useFixedAspectRatio: 0
   targetAspectRatio: 1.777
-  imageFolderName: collague_images
+  imageFolderName: dogs_vs_cats
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0, g: 0, b: 0, a: 1}
@@ -2646,10 +2643,7 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
-  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
-    type: 3}
-  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -2782,7 +2776,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   width: 3
-  height: 1.8
+  height: 2.2
   curveAngleDegrees: 25
   columnSegments: 32
   concave: 1
@@ -2897,10 +2891,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   rayOrigin: {fileID: 539902411}
-  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
-    type: 3}
-  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   curvedPanel: {fileID: 1059820478}
   maxDistance: 10
@@ -2947,7 +2938,7 @@ MonoBehaviour:
   anchorWorldSpaceCanvasWhenEnabled: 1
   useFixedAspectRatio: 1
   targetAspectRatio: 1.777
-  imageFolderName: collague_images
+  imageFolderName: dogs_vs_cats
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
@@ -3002,10 +2993,7 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
-  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
-    type: 3}
-  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -3051,7 +3039,7 @@ MonoBehaviour:
   anchorWorldSpaceCanvasWhenEnabled: 1
   useFixedAspectRatio: 1
   targetAspectRatio: 1.777
-  imageFolderName: collague_images
+  imageFolderName: dogs_vs_cats
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
@@ -3106,10 +3094,7 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
-  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
-    type: 3}
-  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
@@ -3871,7 +3856,7 @@ MonoBehaviour:
   anchorWorldSpaceCanvasWhenEnabled: 1
   useFixedAspectRatio: 1
   targetAspectRatio: 1.777
-  imageFolderName: collague_images
+  imageFolderName: dogs_vs_cats
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
@@ -3926,10 +3911,7 @@ MonoBehaviour:
   renderTextureSize: {x: 2048, y: 1152}
   curvedMaterial: {fileID: 0}
   rayOrigin: {fileID: 539902411}
-  leftRayOrigin: {fileID: 758416240}
   triggerAction: {fileID: -1758520528963094988, guid: c348712bda248c246b8c49b3db54643f,
-    type: 3}
-  leftTriggerAction: {fileID: 6558622148059887818, guid: c348712bda248c246b8c49b3db54643f,
     type: 3}
   layerMask:
     serializedVersion: 2
