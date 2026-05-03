@@ -157,38 +157,37 @@ namespace Scenes.script
         void CheckForInput()
         {
             InputDevice device = GetInputDevice();
-            if (device.isValid)
-            {
-                // Check for trigger press
-                if (device.TryGetFeatureValue(CommonUsages.triggerButton, out bool triggerPressed))
-                {
-                    if (triggerPressed && !triggerWasPressed)
-                    {
-                        Debug.Log((isLeftController ? "Left" : "Right") + " TRIGGER PRESSED!");
-                        ShootRaycast();
-                    }
-                    triggerWasPressed = triggerPressed;
-                }
-
-                /* Unneeded */
-                // Also check trigger value (analog)
-                // if (device.TryGetFeatureValue(CommonUsages.trigger, out float triggerValue))
-                // {
-                //     if (triggerValue > 0.1f) 
-                //     {
-                //         Debug.Log((isLeftController ? "Left" : "Right") + " TRIGGER VALUE: " + triggerValue);
-                //     }
-                // }
-
-                if (device.TryGetFeatureValue(CommonUsages.primaryButton, out bool primary) && primary)
-                {
-                    Debug.Log((isLeftController ? "Left" : "Right") + " PRIMARY BUTTON!");
-                }
-            }
-            else
+            if (!device.isValid)
             {
                 Debug.LogWarning((isLeftController ? "Left" : "Right") + " controller not detected");
+                return;
             }
+
+            bool pressed = IsTriggerPressed(device);
+            // Fire on release (falling edge), matching the XR Interaction Toolkit's pointer-click
+            // convention. Firing on press would change the active panel mid-pull, causing XRI's
+            // release event to land on a different target (e.g. the new panel's "back to prompt"
+            // button) and fire a second, unwanted click.
+            if (!pressed && triggerWasPressed)
+            {
+                Debug.Log((isLeftController ? "Left" : "Right") + " TRIGGER RELEASED!");
+                ShootRaycast();
+            }
+            triggerWasPressed = pressed;
+        }
+
+        /// <summary>
+        /// Robust trigger detection: combines the boolean <c>triggerButton</c> (which only latches
+        /// near a full pull on many headsets) with the analog <c>trigger</c> float at a 0.5
+        /// threshold so partial pulls register reliably.
+        /// </summary>
+        static bool IsTriggerPressed(InputDevice device)
+        {
+            bool btn = false;
+            device.TryGetFeatureValue(CommonUsages.triggerButton, out btn);
+            float val = 0f;
+            device.TryGetFeatureValue(CommonUsages.trigger, out val);
+            return btn || val > 0.5f;
         }
 
         void ShootRaycast()
