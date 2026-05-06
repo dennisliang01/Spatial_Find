@@ -11,6 +11,14 @@ namespace Scenes.script
 {
     public class WorkingController : MonoBehaviour
     {
+        const float LaserLength = 5f;
+        const float RaycastMaxDistance = 50f;
+        const float TriggerPressThreshold = 0.75f;
+        const float TriggerReleaseThreshold = 0.25f;
+        const float TriggerReleaseDebounceSeconds = 0.1f;
+        const float CloseBehindSlabToleranceMeters = 0.35f;
+        const float CloseToStartSuppressionSeconds = 0.2f;
+
         public bool isLeftController = true;
 
         [SerializeField]
@@ -18,7 +26,12 @@ namespace Scenes.script
         private ClipSearchFlowController clipSearchFlowController;
 
         private LineRenderer laser;
-        private bool triggerWasPressed = false;
+        private bool triggerIsPressed;
+        private float lastTriggerReleaseTime = float.NegativeInfinity;
+        private GameObject triggerPressTarget;
+        private Coroutine closeToStartSuppressionCoroutine;
+
+        string ControllerLabel => isLeftController ? "Left" : "Right";
 
         void Awake()
         {
@@ -30,37 +43,19 @@ namespace Scenes.script
         {
             try
             {
+                DisableCompetingXriUiInteraction();
+
                 // XRInteractorLineVisual owns the LineRenderer on this object; do not replace it.
                 if (GetComponent<XRInteractorLineVisual>() != null)
                 {
                     laser = null;
-                    Debug.Log((isLeftController ? "Left" : "Right") +
-                        " WorkingController: using XRInteractorLineVisual ray (custom laser skipped).");
+                    Debug.Log(ControllerLabel + " WorkingController: using XRInteractorLineVisual ray (custom laser skipped).");
                     return;
                 }
 
-                laser = GetComponent<LineRenderer>();
-                if (laser == null)
-                    laser = gameObject.AddComponent<LineRenderer>();
-
-                if (laser != null)
+                if (TrySetupLaser())
                 {
-                    laser.positionCount = 2;
-                    laser.startWidth = 0.01f;
-                    laser.endWidth = 0.01f;
-
-                    Shader shader = Shader.Find("Sprites/Default")
-                        ?? Shader.Find("Standard")
-                        ?? Shader.Find("Unlit/Color")
-                        ?? Shader.Find("Universal Render Pipeline/Unlit");
-                    if (shader != null)
-                    {
-                        laser.material = new Material(shader);
-                    }
-                    laser.startColor = Color.green;
-                    laser.endColor = Color.red;
-
-                    Debug.Log((isLeftController ? "Left" : "Right") + " Working Controller Ready with Laser");
+                    Debug.Log(ControllerLabel + " Working Controller Ready with Laser");
                 }
                 else
                 {
@@ -130,7 +125,7 @@ namespace Scenes.script
             try
             {
                 laser.SetPosition(0, transform.position);
-                laser.SetPosition(1, transform.position + transform.forward * 5f);
+                laser.SetPosition(1, transform.position + transform.forward * LaserLength);
             }
             catch (System.Exception e)
             {
@@ -143,52 +138,85 @@ namespace Scenes.script
             InputDevice device = GetInputDevice();
             if (!device.isValid)
             {
-                Debug.LogWarning((isLeftController ? "Left" : "Right") + " controller not detected");
+                triggerIsPressed = false;
+                triggerPressTarget = null;
+                Debug.LogWarning(ControllerLabel + " controller not detected");
                 return;
             }
 
-            bool pressed = IsTriggerPressed(device);
+            bool pressed = IsTriggerPressed(device, triggerIsPressed);
+            if (pressed && !triggerIsPressed)
+                triggerPressTarget = GetRaycastTarget(logRay: false, spawnHitMarker: false);
+
             // Fire on release (falling edge), matching the XR Interaction Toolkit's pointer-click
             // convention. Firing on press would change the active panel mid-pull, causing XRI's
             // release event to land on a different target (e.g. the new panel's "back to prompt"
             // button) and fire a second, unwanted click.
-            if (!pressed && triggerWasPressed)
+            if (!pressed && triggerIsPressed && Time.unscaledTime - lastTriggerReleaseTime >= TriggerReleaseDebounceSeconds)
             {
-                Debug.Log((isLeftController ? "Left" : "Right") + " TRIGGER RELEASED!");
+                lastTriggerReleaseTime = Time.unscaledTime;
+                Debug.Log(ControllerLabel + " TRIGGER RELEASED!");
                 ShootRaycast();
             }
-            triggerWasPressed = pressed;
+            if (!pressed)
+                triggerPressTarget = null;
+
+            triggerIsPressed = pressed;
         }
 
         /// <summary>
         /// Robust trigger detection: combines the boolean <c>triggerButton</c> (which only latches
-        /// near a full pull on many headsets) with the analog <c>trigger</c> float at a 0.5
-        /// threshold so partial pulls register reliably.
+        /// near a full pull on many headsets) with the analog <c>trigger</c> float with hysteresis
+        /// so partial pulls register reliably without bouncing near the threshold.
         /// </summary>
-        static bool IsTriggerPressed(InputDevice device)
+        static bool IsTriggerPressed(InputDevice device, bool wasPressed)
         {
             bool btn = false;
             device.TryGetFeatureValue(CommonUsages.triggerButton, out btn);
             float val = 0f;
             device.TryGetFeatureValue(CommonUsages.trigger, out val);
-            return btn || val > 0.5f;
+            if (btn)
+                return true;
+
+            return wasPressed
+                ? val > TriggerReleaseThreshold
+                : val >= TriggerPressThreshold;
         }
 
         void ShootRaycast()
         {
-            GameObject hit = GetRaycastTarget();
+            GameObject hit = ResolveInteractionTarget();
             if (hit == null) return;
             HandleHit(hit);
         }
 
-        GameObject GetRaycastTarget()
+        GameObject ResolveInteractionTarget()
+        {
+            GameObject releaseTarget = GetRaycastTarget();
+            if (triggerPressTarget == null)
+                return releaseTarget;
+            if (releaseTarget == null)
+                return triggerPressTarget;
+            if (releaseTarget == triggerPressTarget)
+                return releaseTarget;
+            if (IsSameInteractionTarget(triggerPressTarget, releaseTarget))
+                return releaseTarget;
+
+            Debug.Log($"Using press target '{triggerPressTarget.name}' instead of release target '{releaseTarget.name}'.");
+            return triggerPressTarget;
+        }
+
+        GameObject GetRaycastTarget(bool logRay = true, bool spawnHitMarker = true)
         {
             Vector3 origin = transform.position;
             Vector3 dir = transform.forward;
-            float maxDist = 50f;
+            float maxDist = RaycastMaxDistance;
 
-            Debug.DrawRay(origin, dir * maxDist, Color.red, 1f);
-            Debug.Log($"[Ray] origin={origin}, forward={dir}, maxDist={maxDist}");
+            if (logRay)
+            {
+                Debug.DrawRay(origin, dir * maxDist, Color.red, 1f);
+                Debug.Log($"[Ray] origin={origin}, forward={dir}, maxDist={maxDist}");
+            }
 
             RaycastHit[] hits = Physics.RaycastAll(origin, dir, maxDist, ~0, QueryTriggerInteraction.Collide);
 
@@ -204,21 +232,14 @@ namespace Scenes.script
                 var h = hits[i];
                 var go = h.collider.gameObject;
 
-                if (go.name.Contains("Controller") || go.name.Contains("Hand"))
-                {
+                if (IsIgnoredRaycastObject(go))
                     continue;
-                }
 
-                Debug.Log($"hit[{i}] name={go.name}, dist={h.distance}, hitPoint={h.point}, layer={LayerMask.LayerToName(go.layer)}, isTrigger={h.collider.isTrigger}");
-                Debug.Log($"   transform.pos={go.transform.position}, transform.parent={(go.transform.parent ? go.transform.parent.name : "null")}");
-
+                if (logRay)
+                    LogRaycastHit(i, h, go);
                 validHits.Add(h);
-
-                GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                marker.transform.position = h.point;
-                marker.transform.localScale = Vector3.one * 0.05f;
-                Destroy(marker.GetComponent<Collider>());
-                Destroy(marker, 2f);
+                if (spawnHitMarker)
+                    SpawnHitMarker(h.point);
             }
 
             if (validHits.Count == 0)
@@ -228,25 +249,47 @@ namespace Scenes.script
             }
 
             validHits.Sort((a, b) => a.distance.CompareTo(b.distance));
-            float minDistance = validHits[0].distance;
             // Stacked world-space CLIP panels each have header navigate BoxColliders; the closest hit can
             // be a *rear* panel's slab even when the user aims at the front panel's CloseToStart. Prefer any
             // CloseToStart that lies within a small window behind the closest hit along the ray.
-            const float closeBehindSlabToleranceMeters = 0.35f;
-            RaycastHit chosen = validHits[0];
-            float bestCloseDist = float.MaxValue;
-            foreach (RaycastHit h in validHits)
-            {
-                if (!string.Equals(h.collider.gameObject.name, "CloseToStart", StringComparison.Ordinal))
-                    continue;
-                if (h.distance <= minDistance + closeBehindSlabToleranceMeters && h.distance < bestCloseDist)
-                {
-                    bestCloseDist = h.distance;
-                    chosen = h;
-                }
-            }
+            RaycastHit chosen = ChoosePreferredHit(validHits);
 
             return chosen.collider.gameObject;
+        }
+
+        static bool IsSameInteractionTarget(GameObject first, GameObject second)
+        {
+            if (first == null || second == null)
+                return false;
+            if (first == second)
+                return true;
+
+            Button firstButton = first.GetComponent<Button>() ?? first.GetComponentInParent<Button>();
+            Button secondButton = second.GetComponent<Button>() ?? second.GetComponentInParent<Button>();
+            if (firstButton != null && secondButton != null)
+                return firstButton == secondButton;
+
+            TMP_InputField firstField = first.GetComponent<TMP_InputField>() ?? first.GetComponentInParent<TMP_InputField>();
+            TMP_InputField secondField = second.GetComponent<TMP_InputField>() ?? second.GetComponentInParent<TMP_InputField>();
+            if (firstField != null && secondField != null)
+                return firstField == secondField;
+
+            ImageTile firstTile = first.GetComponent<ImageTile>() ?? first.GetComponentInParent<ImageTile>();
+            ImageTile secondTile = second.GetComponent<ImageTile>() ?? second.GetComponentInParent<ImageTile>();
+            if (firstTile != null && secondTile != null)
+                return firstTile == secondTile;
+
+            MeshController firstMesh = first.GetComponent<MeshController>();
+            MeshController secondMesh = second.GetComponent<MeshController>();
+            if (firstMesh != null && secondMesh != null)
+                return firstMesh == secondMesh;
+
+            SubPanelController firstSubPanel = first.GetComponent<SubPanelController>();
+            SubPanelController secondSubPanel = second.GetComponent<SubPanelController>();
+            if (firstSubPanel != null && secondSubPanel != null)
+                return firstSubPanel == secondSubPanel;
+
+            return false;
         }
 
         void HandleHit(GameObject hit)
@@ -318,6 +361,7 @@ namespace Scenes.script
                 {
                     Debug.LogWarning("No main panel found for subpanel");
                 }
+                BeginTransientBackNavigationSuppression();
                 return true;
             }
 
@@ -338,6 +382,7 @@ namespace Scenes.script
                 {
                     meshController.RemoveChildPlane();
                 }
+                BeginTransientBackNavigationSuppression();
                 return true;
             }
 
@@ -346,9 +391,7 @@ namespace Scenes.script
 
         bool TryHandleImageTile(GameObject hit)
         {
-            ImageTile imageTile = hit.GetComponent<ImageTile>();
-            if (imageTile == null)
-                imageTile = hit.GetComponentInParent<ImageTile>();
+            ImageTile imageTile = hit.GetComponent<ImageTile>() ?? hit.GetComponentInParent<ImageTile>();
 
             if (imageTile != null && !string.IsNullOrEmpty(imageTile.imageId))
             {
@@ -362,6 +405,7 @@ namespace Scenes.script
                     Debug.LogWarning("WorkingController: ClipSearchFlowController not found; cannot select image.");
                 }
 
+                BeginTransientBackNavigationSuppression();
                 return true;
             }
 
@@ -404,6 +448,122 @@ namespace Scenes.script
         InputDevice GetInputDevice()
         {
             return InputDevices.GetDeviceAtXRNode(isLeftController ? XRNode.LeftHand : XRNode.RightHand);
+        }
+
+        void DisableCompetingXriUiInteraction()
+        {
+            XRRayInteractor rayInteractor = GetComponent<XRRayInteractor>();
+            if (rayInteractor == null)
+                return;
+
+            if (rayInteractor.enableUIInteraction)
+            {
+                rayInteractor.enableUIInteraction = false;
+                Debug.Log(ControllerLabel + " WorkingController: disabled competing XRI UI interaction on XRRayInteractor.");
+            }
+        }
+
+        bool TrySetupLaser()
+        {
+            laser = GetComponent<LineRenderer>();
+            if (laser == null)
+                laser = gameObject.AddComponent<LineRenderer>();
+            if (laser == null)
+                return false;
+
+            laser.positionCount = 2;
+            laser.startWidth = 0.01f;
+            laser.endWidth = 0.01f;
+
+            Shader shader = Shader.Find("Sprites/Default")
+                ?? Shader.Find("Standard")
+                ?? Shader.Find("Unlit/Color")
+                ?? Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader != null)
+                laser.material = new Material(shader);
+
+            laser.startColor = Color.green;
+            laser.endColor = Color.red;
+            return true;
+        }
+
+        static bool IsIgnoredRaycastObject(GameObject go)
+        {
+            return go.name.Contains("Controller") || go.name.Contains("Hand");
+        }
+
+        static void LogRaycastHit(int index, RaycastHit hit, GameObject go)
+        {
+            Debug.Log($"hit[{index}] name={go.name}, dist={hit.distance}, hitPoint={hit.point}, layer={LayerMask.LayerToName(go.layer)}, isTrigger={hit.collider.isTrigger}");
+            Debug.Log($"   transform.pos={go.transform.position}, transform.parent={(go.transform.parent ? go.transform.parent.name : "null")}");
+        }
+
+        static void SpawnHitMarker(Vector3 hitPoint)
+        {
+            GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            marker.transform.position = hitPoint;
+            marker.transform.localScale = Vector3.one * 0.05f;
+            Destroy(marker.GetComponent<Collider>());
+            Destroy(marker, 2f);
+        }
+
+        static RaycastHit ChoosePreferredHit(List<RaycastHit> validHits)
+        {
+            float minDistance = validHits[0].distance;
+            RaycastHit chosen = validHits[0];
+            float bestCloseDist = float.MaxValue;
+            foreach (RaycastHit h in validHits)
+            {
+                if (!string.Equals(h.collider.gameObject.name, "CloseToStart", StringComparison.Ordinal))
+                    continue;
+                if (h.distance <= minDistance + CloseBehindSlabToleranceMeters && h.distance < bestCloseDist)
+                {
+                    bestCloseDist = h.distance;
+                    chosen = h;
+                }
+            }
+
+            return chosen;
+        }
+
+        void BeginTransientBackNavigationSuppression()
+        {
+            if (closeToStartSuppressionCoroutine != null)
+                StopCoroutine(closeToStartSuppressionCoroutine);
+            closeToStartSuppressionCoroutine = StartCoroutine(SuppressCloseToStartButtonsTemporarily());
+        }
+
+        System.Collections.IEnumerator SuppressCloseToStartButtonsTemporarily()
+        {
+            List<Button> buttons = CollectCloseToStartButtons();
+            for (int i = 0; i < buttons.Count; i++)
+                buttons[i].interactable = false;
+
+            yield return new WaitForSecondsRealtime(CloseToStartSuppressionSeconds);
+
+            for (int i = 0; i < buttons.Count; i++)
+            {
+                if (buttons[i] != null)
+                    buttons[i].interactable = true;
+            }
+
+            closeToStartSuppressionCoroutine = null;
+        }
+
+        static List<Button> CollectCloseToStartButtons()
+        {
+            Button[] allButtons = FindObjectsOfType<Button>(includeInactive: false);
+            List<Button> closeButtons = new List<Button>();
+            for (int i = 0; i < allButtons.Length; i++)
+            {
+                Button button = allButtons[i];
+                if (button == null)
+                    continue;
+                if (string.Equals(button.gameObject.name, "CloseToStart", StringComparison.Ordinal))
+                    closeButtons.Add(button);
+            }
+
+            return closeButtons;
         }
 
         MeshController FindMainPanel(Transform start)
