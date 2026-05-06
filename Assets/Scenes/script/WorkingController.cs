@@ -176,6 +176,13 @@ namespace Scenes.script
 
         void ShootRaycast()
         {
+            GameObject hit = GetRaycastTarget();
+            if (hit == null) return;
+            HandleHit(hit);
+        }
+
+        GameObject GetRaycastTarget()
+        {
             Vector3 origin = transform.position;
             Vector3 dir = transform.forward;
             float maxDist = 50f;
@@ -188,7 +195,7 @@ namespace Scenes.script
             if (hits.Length == 0)
             {
                 Debug.Log("RaycastAll: no hits");
-                return;
+                return null;
             }
 
             List<RaycastHit> validHits = new List<RaycastHit>();
@@ -217,7 +224,7 @@ namespace Scenes.script
             if (validHits.Count == 0)
             {
                 Debug.Log("No valid hits after filtering");
-                return;
+                return null;
             }
 
             validHits.Sort((a, b) => a.distance.CompareTo(b.distance));
@@ -239,28 +246,59 @@ namespace Scenes.script
                 }
             }
 
+            return chosen.collider.gameObject;
+        }
+
+        void HandleHit(GameObject hit)
+        {
+            if (TryHandleInputFieldRedirect(hit))
+                return;
+
+            Debug.Log($"Processing interaction with: {hit.name}");
+
+            if (TryHandleSubPanel(hit))
+                return;
+
+            if (TryHandleMeshController(hit))
+                return;
+
+            if (TryHandleImageTile(hit))
+                return;
+
+            if (TryHandleInputField(hit))
+                return;
+
+            if (TryHandleButton(hit))
+                return;
+
+            Debug.LogWarning($"No MeshController or ImageTile on {hit.name}");
+        }
+
+        bool TryHandleInputFieldRedirect(GameObject hit)
+        {
             // A click on the prompt's TMP_InputField runs the configured submit redirect (Search
             // button) instead of focusing the field. Mirrors the curved-canvas path in
             // CurvedCanvasInteractor so both rendering modes behave the same.
-            TMP_InputField hitField = chosen.collider.GetComponentInParent<TMP_InputField>();
+            TMP_InputField hitField = hit.GetComponentInParent<TMP_InputField>();
             if (hitField != null)
             {
                 TmpInputFieldXrPointerFocus focus = hitField.GetComponent<TmpInputFieldXrPointerFocus>();
                 if (focus != null && focus.TryInvokeXrClickRedirect())
-                    return;
+                    return true;
             }
 
-            GameObject hitObject = chosen.collider.gameObject;
+            return false;
+        }
 
-            Debug.Log($"Processing interaction with: {hitObject.name}");
-
+        bool TryHandleSubPanel(GameObject hit)
+        {
             // moved the subpanel handleing logic here 
-            SubPanelController subPanel = hitObject.GetComponent<SubPanelController>();
+            SubPanelController subPanel = hit.GetComponent<SubPanelController>();
             if (subPanel != null)
             {
                 subPanel.SelectPanel();
 
-                MeshController mainPanel = FindMainPanel(hitObject.transform);
+                MeshController mainPanel = FindMainPanel(hit.transform);
                 if (mainPanel != null)
                 {
                     string subpanelPath = subPanel.GetFolderPath();
@@ -280,11 +318,16 @@ namespace Scenes.script
                 {
                     Debug.LogWarning("No main panel found for subpanel");
                 }
-                return;
+                return true;
             }
 
+            return false;
+        }
+
+        bool TryHandleMeshController(GameObject hit)
+        {
             // Handle main panel
-            MeshController meshController = hitObject.GetComponent<MeshController>();
+            MeshController meshController = hit.GetComponent<MeshController>();
             if (meshController != null)
             {
                 if (!meshController.hasChild)
@@ -295,12 +338,17 @@ namespace Scenes.script
                 {
                     meshController.RemoveChildPlane();
                 }
-                return;
+                return true;
             }
 
-            ImageTile imageTile = hitObject.GetComponent<ImageTile>();
+            return false;
+        }
+
+        bool TryHandleImageTile(GameObject hit)
+        {
+            ImageTile imageTile = hit.GetComponent<ImageTile>();
             if (imageTile == null)
-                imageTile = hitObject.GetComponentInParent<ImageTile>();
+                imageTile = hit.GetComponentInParent<ImageTile>();
 
             if (imageTile != null && !string.IsNullOrEmpty(imageTile.imageId))
             {
@@ -314,11 +362,16 @@ namespace Scenes.script
                     Debug.LogWarning("WorkingController: ClipSearchFlowController not found; cannot select image.");
                 }
 
-                return;
+                return true;
             }
 
-            TMP_InputField tmpInput = hitObject.GetComponent<TMP_InputField>()
-                ?? hitObject.GetComponentInParent<TMP_InputField>();
+            return false;
+        }
+
+        bool TryHandleInputField(GameObject hit)
+        {
+            TMP_InputField tmpInput = hit.GetComponent<TMP_InputField>()
+                ?? hit.GetComponentInParent<TMP_InputField>();
             if (tmpInput != null)
             {
                 if (tmpInput.interactable)
@@ -328,19 +381,24 @@ namespace Scenes.script
                         es.SetSelectedGameObject(tmpInput.gameObject);
                     tmpInput.ActivateInputField();
                 }
-                return;
+                return true;
             }
 
-            Button uiButton = hitObject.GetComponent<Button>()
-                ?? hitObject.GetComponentInParent<Button>();
+            return false;
+        }
+
+        bool TryHandleButton(GameObject hit)
+        {
+            Button uiButton = hit.GetComponent<Button>()
+                ?? hit.GetComponentInParent<Button>();
             if (uiButton != null)
             {
                 if (uiButton.interactable)
                     uiButton.onClick.Invoke();
-                return;
+                return true;
             }
 
-            Debug.LogWarning($"No MeshController or ImageTile on {hitObject.name}");
+            return false;
         }
 
         InputDevice GetInputDevice()

@@ -26,6 +26,7 @@ namespace Scenes.script
 
         public TMP_InputField queryInput;
         public Button submitButton;
+        public Button speechInputButton;
 
         [TextArea(1, 3)]
         public string debugQuery = "a cat";
@@ -51,6 +52,9 @@ namespace Scenes.script
 
         void Awake()
         {
+            if (GetComponent<PromptSpeechInputController>() == null)
+                gameObject.AddComponent<PromptSpeechInputController>();
+
             PropagateApiClient();
             ApplyStagePanelDepthOffsets();
             SetupPromptPhysicsAndFocus();
@@ -80,6 +84,7 @@ namespace Scenes.script
 
             EnsureBoxColliderOnRect(queryInput != null ? queryInput.transform as RectTransform : null);
             EnsureBoxColliderOnRect(submitButton != null ? submitButton.transform as RectTransform : null);
+            EnsureBoxColliderOnRect(speechInputButton != null ? speechInputButton.transform as RectTransform : null);
         }
 
         static void EnsureBoxColliderOnRect(RectTransform rt)
@@ -97,6 +102,8 @@ namespace Scenes.script
                 queryInput != null ? queryInput.GetComponent<BoxCollider>() : null);
             SyncUiCollider(submitButton != null ? submitButton.transform as RectTransform : null,
                 submitButton != null ? submitButton.GetComponent<BoxCollider>() : null);
+            SyncUiCollider(speechInputButton != null ? speechInputButton.transform as RectTransform : null,
+                speechInputButton != null ? speechInputButton.GetComponent<BoxCollider>() : null);
         }
 
         static void SyncUiCollider(RectTransform rt, BoxCollider box)
@@ -135,6 +142,14 @@ namespace Scenes.script
                 queryInput.interactable = interactable;
             if (submitButton != null)
                 submitButton.interactable = interactable;
+            if (speechInputButton != null)
+                speechInputButton.interactable = interactable;
+        }
+
+        public void RefreshPromptUiColliders()
+        {
+            ResyncPromptPhysicsColliders();
+            StartCoroutine(ResyncPromptCollidersNextFrame());
         }
 
         void ShowPromptUiAfterStage1Failure(string errorMessage)
