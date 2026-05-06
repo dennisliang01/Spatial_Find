@@ -132,7 +132,9 @@ namespace Scenes.script
 
         sealed class CellSlot
         {
-            public RawImage Raw;
+            public Image Background;          // Cell's "padding" colour + click target.
+            public RawImage Raw;              // Texture display, parented to the cell, sized by Fitter.
+            public AspectRatioFitter Fitter;  // Resizes Raw to match texture aspect inside the cell.
             public Button Btn;
             public string ImageId;
             public Texture2D OwnedTexture;
@@ -467,8 +469,8 @@ namespace Scenes.script
                     continue;
                 bool on = cellsPickable && !string.IsNullOrEmpty(slot.ImageId);
                 slot.Btn.interactable = on;
-                if (slot.Raw != null)
-                    slot.Raw.raycastTarget = on;
+                if (slot.Background != null)
+                    slot.Background.raycastTarget = on;
             }
 
             RefreshFullPanelNavigateInteractivity();
@@ -532,18 +534,20 @@ namespace Scenes.script
                     Texture2D tex = LoadTextureFromFile(localPath);
                     if (tex != null)
                     {
-                        _cells[i].Raw.texture = tex;
+                        AssignCellTexture(_cells[i], tex);
                         _cells[i].OwnedTexture = tex;
                     }
                 }
                 else if (!reuseLoadedThumbnailsWithoutNetwork && apiClient != null && !string.IsNullOrEmpty(rec.path))
                 {
-                    _cells[i].Raw.color = loadingCellColor;
+                    if (_cells[i].Background != null)
+                        _cells[i].Background.color = loadingCellColor;
                     string url = apiClient.GetImageUrl(rec.path);
                     using (UnityWebRequest req = UnityWebRequestTexture.GetTexture(url))
                     {
                         yield return req.SendWebRequest();
-                        _cells[i].Raw.color = cellBackground;
+                        if (_cells[i].Background != null)
+                            _cells[i].Background.color = cellBackground;
 #if UNITY_2020_1_OR_NEWER
                         if (req.result != UnityWebRequest.Result.Success)
 #else
@@ -555,7 +559,7 @@ namespace Scenes.script
                         else
                         {
                             Texture2D tex = DownloadHandlerTexture.GetContent(req);
-                            _cells[i].Raw.texture = tex;
+                            AssignCellTexture(_cells[i], tex);
                             _cells[i].OwnedTexture = tex;
                         }
                     }
@@ -580,7 +584,7 @@ namespace Scenes.script
                     Texture2D tex = LoadTextureFromFile(imagePaths[i]);
                     if (tex != null)
                     {
-                        _cells[i].Raw.texture = tex;
+                        AssignCellTexture(_cells[i], tex);
                         _cells[i].OwnedTexture = tex;
                     }
                 }
@@ -838,12 +842,15 @@ namespace Scenes.script
             for (int i = 0; i < needed; i++)
             {
                 GameObject cellGO = CreateUIElement($"Cell_{i}", gridGO.transform);
-                RawImage rawImg = cellGO.AddComponent<RawImage>();
-                rawImg.color = cellBackground;
-                rawImg.raycastTarget = true;
+
+                // Background fills the whole cell — both the visible padding when the texture's
+                // aspect doesn't match the cell, and the Button's click target.
+                Image bgImg = cellGO.AddComponent<Image>();
+                bgImg.color = cellBackground;
+                bgImg.raycastTarget = true;
 
                 Button btn = cellGO.AddComponent<Button>();
-                btn.targetGraphic = rawImg;
+                btn.targetGraphic = bgImg;
                 btn.transition = Selectable.Transition.None;
 
                 // Physics raycasts (e.g. WorkingController) need a collider aligned to the RectTransform.
@@ -854,7 +861,27 @@ namespace Scenes.script
                 // Add ImageTile component so PCInputController can retrieve the image ID on mouse click.
                 cellGO.AddComponent<ImageTile>();
 
-                _cells.Add(new CellSlot { Raw = rawImg, Btn = btn, ImageId = null, OwnedTexture = null });
+                // Photo child holds the texture and uses AspectRatioFitter (FitInParent) to letterbox
+                // / pillarbox the image inside the cell — no stretching, no cropping. The cell
+                // background shows through wherever the texture doesn't reach.
+                GameObject photoGO = CreateUIElement("Photo", cellGO.transform);
+                StretchFill(photoGO.GetComponent<RectTransform>());
+                RawImage rawImg = photoGO.AddComponent<RawImage>();
+                rawImg.color = Color.white;
+                rawImg.raycastTarget = false;
+                AspectRatioFitter fitter = photoGO.AddComponent<AspectRatioFitter>();
+                fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+                fitter.aspectRatio = 1f;
+
+                _cells.Add(new CellSlot
+                {
+                    Background = bgImg,
+                    Raw = rawImg,
+                    Fitter = fitter,
+                    Btn = btn,
+                    ImageId = null,
+                    OwnedTexture = null,
+                });
             }
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(gridRT);
@@ -943,13 +970,27 @@ namespace Scenes.script
             }
 
             if (slot.Raw != null)
-            {
                 slot.Raw.texture = null;
-                slot.Raw.color = cellBackground;
-                slot.Raw.raycastTarget = false;
+            if (slot.Background != null)
+            {
+                slot.Background.color = cellBackground;
+                slot.Background.raycastTarget = false;
             }
 
             slot.ImageId = null;
+        }
+
+        /// <summary>
+        /// Assigns <paramref name="tex"/> to a cell's RawImage and updates its AspectRatioFitter so
+        /// the texture renders at its natural aspect, letterboxed/pillarboxed inside the cell.
+        /// </summary>
+        static void AssignCellTexture(CellSlot slot, Texture2D tex)
+        {
+            if (slot == null) return;
+            if (slot.Raw != null)
+                slot.Raw.texture = tex;
+            if (slot.Fitter != null && tex != null && tex.width > 0 && tex.height > 0)
+                slot.Fitter.aspectRatio = (float)tex.width / tex.height;
         }
 
         static void WirePick(CellSlot slot, string id, Action<string> onCellPicked)
@@ -961,14 +1002,14 @@ namespace Scenes.script
             if (string.IsNullOrEmpty(id) || onCellPicked == null)
             {
                 slot.Btn.interactable = false;
-                if (slot.Raw != null)
-                    slot.Raw.raycastTarget = false;
+                if (slot.Background != null)
+                    slot.Background.raycastTarget = false;
                 return;
             }
 
             slot.Btn.interactable = true;
-            if (slot.Raw != null)
-                slot.Raw.raycastTarget = true;
+            if (slot.Background != null)
+                slot.Background.raycastTarget = true;
             string captured = id;
             slot.Btn.onClick.AddListener(() => onCellPicked(captured));
         }

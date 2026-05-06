@@ -87,22 +87,6 @@ namespace Scenes.script
                 DrawLaser();
             }
 
-            /* Caused program to crash with VIVE Focus Vision */
-            // if (Input.GetKeyDown(KeyCode.T))
-            // {
-            //     Vector3 camOrigin = Camera.main.transform.position;
-            //     Vector3 camDir = (new Vector3(0, 4, 10) - camOrigin).normalized; 
-            //     Debug.DrawRay(camOrigin, camDir * 30f, Color.blue, 2f);
-            //     if (Physics.Raycast(camOrigin, camDir, out RaycastHit h, 30f))
-            //     {
-            //         Debug.Log("Camera ray hit: " + h.collider.name);
-            //     }
-            //     else
-            //     {
-            //         Debug.Log("Camera ray hit nothing");
-            //     }
-            // }
-
             CheckForInput();
         }
 
@@ -283,18 +267,14 @@ namespace Scenes.script
                     string subDisplayPath = subPanel.GetDisplayPath();
                     Debug.Log($"Subpanel path: '{subpanelPath}', Main panel current path: '{mainPanel.folderPath}'");
 
-                    if (!mainPanel.hasChild)
-                    {
-                        mainPanel.folderPath = subpanelPath;
-                        mainPanel.displayPath = subDisplayPath;
-                        Debug.Log($"Setting main panel path to: {subpanelPath}");
-                        Debug.Log($"Setting main display path to: {subDisplayPath}");
-                        mainPanel.SpawnChildPlane();
-                    }
-                    else
-                    {
+                    if (mainPanel.hasChild)
                         mainPanel.RemoveChildPlane();
-                    }
+
+                    mainPanel.folderPath = subpanelPath;
+                    mainPanel.displayPath = subDisplayPath;
+                    Debug.Log($"Setting main panel path to: {subpanelPath}");
+                    Debug.Log($"Setting main display path to: {subDisplayPath}");
+                    mainPanel.SpawnChildPlane();
                 }
                 else
                 {

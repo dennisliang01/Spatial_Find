@@ -433,8 +433,8 @@ MonoBehaviour:
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
   panelBackground: {r: 0, g: 0, b: 0, a: 1}
-  cellBackground: {r: 1, g: 1, b: 1, a: 1}
-  gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  cellBackground: {r: 1, g: 1, b: 1, a: 0}
+  gridBackground: {r: 0.3764706, g: 0.3764706, b: 0.3764706, a: 1}
   headerBarColor: {r: 0, g: 0, b: 0, a: 1}
   layerLabelText: Stage 1
   footerInstructionText: Select the image closest to what you are looking for.
@@ -2580,21 +2580,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   columns: 1
   rows: 1
-  cellSize: {x: 1200, y: 1000}
-  spacing: {x: 0, y: 0}
-  padding: {x: 0, y: 0}
-  canvasScale: 0.015
+  cellSize: {x: 2000, y: 1000}
+  spacing: {x: 5, y: 5}
+  padding: {x: 5, y: 5}
+  canvasScale: 0.05
   worldCanvasSpawnDistanceMeters: 1
   anchorWorldSpaceCanvasWhenEnabled: 1
-  useFixedAspectRatio: 0
+  useFixedAspectRatio: 1
   targetAspectRatio: 1.777
   imageFolderName: dogs_vs_cats
   absoluteDatasetRoot: 
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0, g: 0, b: 0, a: 1}
   panelBackground: {r: 0, g: 0, b: 0, a: 1}
-  cellBackground: {r: 1, g: 1, b: 1, a: 1}
-  gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  cellBackground: {r: 1, g: 1, b: 1, a: 0}
+  gridBackground: {r: 0.3764706, g: 0.3764706, b: 0.3764706, a: 1}
   headerBarColor: {r: 0, g: 0, b: 0, a: 1}
   layerLabelText: Stage 5
   footerInstructionText: Select the image closest to what you are looking for.
@@ -2943,8 +2943,8 @@ MonoBehaviour:
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
   panelBackground: {r: 0, g: 0, b: 0, a: 1}
-  cellBackground: {r: 1, g: 1, b: 1, a: 1}
-  gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  cellBackground: {r: 1, g: 1, b: 1, a: 0}
+  gridBackground: {r: 0.3764706, g: 0.3764706, b: 0.3764706, a: 1}
   headerBarColor: {r: 0, g: 0, b: 0, a: 1}
   layerLabelText: Stage 2
   footerInstructionText: Select the image closest to what you are looking for.
@@ -3029,12 +3029,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4d67b0829e88a1a42b83612b206b66e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  columns: 5
-  rows: 2
-  cellSize: {x: 400, y: 140}
+  columns: 3
+  rows: 3
+  cellSize: {x: 650, y: 500}
   spacing: {x: 5, y: 5}
   padding: {x: 5, y: 5}
-  canvasScale: 0.015
+  canvasScale: 0.025
   worldCanvasSpawnDistanceMeters: 3
   anchorWorldSpaceCanvasWhenEnabled: 1
   useFixedAspectRatio: 1
@@ -3044,8 +3044,8 @@ MonoBehaviour:
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
   panelBackground: {r: 0, g: 0, b: 0, a: 1}
-  cellBackground: {r: 1, g: 1, b: 1, a: 1}
-  gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  cellBackground: {r: 1, g: 1, b: 1, a: 0}
+  gridBackground: {r: 0.3764706, g: 0.3764706, b: 0.3764706, a: 1}
   headerBarColor: {r: 0, g: 0, b: 0, a: 1}
   layerLabelText: Stage 3
   footerInstructionText: Select the image closest to what you are looking for.
@@ -3848,7 +3848,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   columns: 3
   rows: 1
-  cellSize: {x: 670, y: 140}
+  cellSize: {x: 600, y: 400}
   spacing: {x: 5, y: 5}
   padding: {x: 5, y: 5}
   canvasScale: 0.015
@@ -3861,8 +3861,8 @@ MonoBehaviour:
   apiClient: {fileID: 0}
   loadingCellColor: {r: 0.82, g: 0.82, b: 0.84, a: 1}
   panelBackground: {r: 0, g: 0, b: 0, a: 1}
-  cellBackground: {r: 1, g: 1, b: 1, a: 1}
-  gridBackground: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  cellBackground: {r: 1, g: 1, b: 1, a: 0}
+  gridBackground: {r: 0.3764706, g: 0.3764706, b: 0.3764706, a: 1}
   headerBarColor: {r: 0, g: 0, b: 0, a: 1}
   layerLabelText: Stage 4
   footerInstructionText: Select the image closest to what you are looking for.
