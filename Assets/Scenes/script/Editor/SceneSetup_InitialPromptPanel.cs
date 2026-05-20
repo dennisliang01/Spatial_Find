@@ -9,7 +9,7 @@ using TMPro;
 namespace Scenes.script
 {
     /// <summary>
-    /// Builds a screen-space <see cref="InitialPromptPanel"/> with TMP input + Search button,
+    /// Builds a screen-space <see cref="InitialPromptPanel"/> with TMP input + Search/mic buttons,
     /// wires <see cref="ClipSearchFlowController"/>, and saves the scene.
     /// Menu: <c>Scenes/Setup Initial Prompt Panel</c>
     /// </summary>
@@ -87,7 +87,25 @@ namespace Scenes.script
             Scene scene = SceneManager.GetActiveScene();
             TMP_FontAsset font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontAssetPath);
 
-            GameObject root = GameObject.Find("InitialPromptPanel");
+            GameObject clipSearchGo = GameObject.Find("ClipSearch_Service");
+            if (clipSearchGo == null)
+            {
+                Debug.LogError("[SceneSetup_InitialPromptPanel] ClipSearch_Service not found.");
+                return;
+            }
+
+            ClipSearchFlowController flow = clipSearchGo.GetComponent<ClipSearchFlowController>();
+            if (flow == null)
+            {
+                Debug.LogError("[SceneSetup_InitialPromptPanel] ClipSearchFlowController not found.");
+                return;
+            }
+
+            GameObject root = flow.initialPromptPanel;
+            if (root == null)
+                root = GameObject.Find("PromptWindow");
+            if (root == null)
+                root = GameObject.Find("InitialPromptPanel");
             if (root == null)
             {
                 root = new GameObject("InitialPromptPanel");
@@ -195,11 +213,13 @@ namespace Scenes.script
             Transform buttonTr = card.transform.Find("InitialPrompt_SearchButton");
             GameObject buttonGo = buttonTr != null ? buttonTr.gameObject : null;
             Button searchButton;
+            bool createdSearchButton = false;
             if (buttonGo == null)
             {
                 buttonGo = TMP_DefaultControls.CreateButton(res);
                 buttonGo.name = "InitialPrompt_SearchButton";
                 Undo.RegisterCreatedObjectUndo(buttonGo, "Create Search button");
+                createdSearchButton = true;
                 TextMeshProUGUI bt = buttonGo.GetComponentInChildren<TextMeshProUGUI>();
                 if (bt != null)
                 {
@@ -211,34 +231,43 @@ namespace Scenes.script
 
             buttonGo.transform.SetParent(card.transform, false);
             searchButton = buttonGo.GetComponent<Button>();
-            RectTransform btnRt = buttonGo.GetComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.35f, 0.08f);
-            btnRt.anchorMax = new Vector2(0.65f, 0.32f);
-            btnRt.offsetMin = Vector2.zero;
-            btnRt.offsetMax = Vector2.zero;
+            if (createdSearchButton)
+                ConfigurePromptButtonRect(buttonGo.GetComponent<RectTransform>(), new Vector2(0.58f, 0.06f), new Vector2(0.88f, 0.22f));
+
+            Transform micTr = card.transform.Find("InitialPrompt_MicButton");
+            GameObject micGo = micTr != null ? micTr.gameObject : null;
+            Button micButton;
+            bool createdMicButton = false;
+            if (micGo == null)
+            {
+                micGo = TMP_DefaultControls.CreateButton(res);
+                micGo.name = "InitialPrompt_MicButton";
+                Undo.RegisterCreatedObjectUndo(micGo, "Create Mic button");
+                createdMicButton = true;
+            }
+
+            micGo.transform.SetParent(card.transform, false);
+            micButton = micGo.GetComponent<Button>();
+            if (createdMicButton)
+                ConfigurePromptButtonRect(micGo.GetComponent<RectTransform>(), new Vector2(0.12f, 0.06f), new Vector2(0.42f, 0.22f));
+            TextMeshProUGUI micText = micGo.GetComponentInChildren<TextMeshProUGUI>();
+            if (micText != null)
+            {
+                micText.text = "Mic";
+                if (font != null)
+                    micText.font = font;
+            }
 
             titleGo.transform.SetSiblingIndex(0);
             inputGo.transform.SetSiblingIndex(1);
-            buttonGo.transform.SetSiblingIndex(2);
-
-            GameObject clipSearchGo = GameObject.Find("ClipSearch_Service");
-            if (clipSearchGo == null)
-            {
-                Debug.LogError("[SceneSetup_InitialPromptPanel] ClipSearch_Service not found.");
-                return;
-            }
-
-            ClipSearchFlowController flow = clipSearchGo.GetComponent<ClipSearchFlowController>();
-            if (flow == null)
-            {
-                Debug.LogError("[SceneSetup_InitialPromptPanel] ClipSearchFlowController not found.");
-                return;
-            }
+            micGo.transform.SetSiblingIndex(2);
+            buttonGo.transform.SetSiblingIndex(3);
 
             SerializedObject flowSo = new SerializedObject(flow);
             SerializedProperty pPanel = flowSo.FindProperty("initialPromptPanel");
             SerializedProperty pQuery = flowSo.FindProperty("queryInput");
             SerializedProperty pSubmit = flowSo.FindProperty("submitButton");
+            SerializedProperty pSpeech = flowSo.FindProperty("speechInputButton");
             SerializedProperty pDebug = flowSo.FindProperty("submitDebugQueryOnStart");
             if (pPanel != null)
                 pPanel.objectReferenceValue = root;
@@ -246,9 +275,20 @@ namespace Scenes.script
                 pQuery.objectReferenceValue = inputField;
             if (pSubmit != null)
                 pSubmit.objectReferenceValue = searchButton;
+            if (pSpeech != null)
+                pSpeech.objectReferenceValue = micButton;
             if (pDebug != null)
                 pDebug.boolValue = false;
             flowSo.ApplyModifiedProperties();
+
+            PromptSpeechInputController speechController = clipSearchGo.GetComponent<PromptSpeechInputController>();
+            if (speechController == null)
+                speechController = Undo.AddComponent<PromptSpeechInputController>(clipSearchGo);
+            SerializedObject speechSo = new SerializedObject(speechController);
+            speechSo.FindProperty("queryInput").objectReferenceValue = inputField;
+            speechSo.FindProperty("micButton").objectReferenceValue = micButton;
+            speechSo.FindProperty("submitButton").objectReferenceValue = searchButton;
+            speechSo.ApplyModifiedPropertiesWithoutUndo();
 
             GameObject stage90 = GameObject.Find("ImageGridPanel_90");
             if (stage90 != null)
@@ -277,6 +317,17 @@ namespace Scenes.script
             go.transform.SetParent(parent, false);
             go.AddComponent<RectTransform>();
             return go;
+        }
+
+        static void ConfigurePromptButtonRect(RectTransform rt, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            if (rt == null)
+                return;
+
+            rt.anchorMin = anchorMin;
+            rt.anchorMax = anchorMax;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
         }
     }
 }

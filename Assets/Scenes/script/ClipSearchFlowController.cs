@@ -22,13 +22,11 @@ namespace Scenes.script
         public ImageGridPanel panelStage3;
         public ImageGridPanel panelStage1;
 
-        [Tooltip("Optional. Legacy fallback for displaying the single final result if panelStage1 is not assigned.")]
-        public RawImage finalResultRawImage;
-
         const int FinalStage = 5;
 
         public TMP_InputField queryInput;
         public Button submitButton;
+        public Button speechInputButton;
 
         [TextArea(1, 3)]
         public string debugQuery = "a cat";
@@ -54,6 +52,9 @@ namespace Scenes.script
 
         void Awake()
         {
+            if (GetComponent<PromptSpeechInputController>() == null)
+                gameObject.AddComponent<PromptSpeechInputController>();
+
             PropagateApiClient();
             ApplyStagePanelDepthOffsets();
             SetupPromptPhysicsAndFocus();
@@ -73,11 +74,17 @@ namespace Scenes.script
 
         void SetupPromptPhysicsAndFocus()
         {
-            if (queryInput != null && queryInput.GetComponent<TmpInputFieldXrPointerFocus>() == null)
-                queryInput.gameObject.AddComponent<TmpInputFieldXrPointerFocus>();
+            if (queryInput != null)
+            {
+                TmpInputFieldXrPointerFocus focus = queryInput.GetComponent<TmpInputFieldXrPointerFocus>();
+                if (focus == null)
+                    focus = queryInput.gameObject.AddComponent<TmpInputFieldXrPointerFocus>();
+                focus.xrClickRedirectButton = submitButton;
+            }
 
             EnsureBoxColliderOnRect(queryInput != null ? queryInput.transform as RectTransform : null);
             EnsureBoxColliderOnRect(submitButton != null ? submitButton.transform as RectTransform : null);
+            EnsureBoxColliderOnRect(speechInputButton != null ? speechInputButton.transform as RectTransform : null);
         }
 
         static void EnsureBoxColliderOnRect(RectTransform rt)
@@ -95,6 +102,8 @@ namespace Scenes.script
                 queryInput != null ? queryInput.GetComponent<BoxCollider>() : null);
             SyncUiCollider(submitButton != null ? submitButton.transform as RectTransform : null,
                 submitButton != null ? submitButton.GetComponent<BoxCollider>() : null);
+            SyncUiCollider(speechInputButton != null ? speechInputButton.transform as RectTransform : null,
+                speechInputButton != null ? speechInputButton.GetComponent<BoxCollider>() : null);
         }
 
         static void SyncUiCollider(RectTransform rt, BoxCollider box)
@@ -133,6 +142,14 @@ namespace Scenes.script
                 queryInput.interactable = interactable;
             if (submitButton != null)
                 submitButton.interactable = interactable;
+            if (speechInputButton != null)
+                speechInputButton.interactable = interactable;
+        }
+
+        public void RefreshPromptUiColliders()
+        {
+            ResyncPromptPhysicsColliders();
+            StartCoroutine(ResyncPromptCollidersNextFrame());
         }
 
         void ShowPromptUiAfterStage1Failure(string errorMessage)
@@ -187,6 +204,18 @@ namespace Scenes.script
             }
         }
 
+        void Update()
+        {
+            if (!Input.GetKeyDown(KeyCode.P))
+                return;
+
+            // No-op while the prompt root is visible (assigned scenes only).
+            if (initialPromptPanel != null && initialPromptPanel.activeInHierarchy)
+                return;
+
+            ReturnToStart();
+        }
+
         /// <summary>
         /// When <see cref="initialPromptPanel"/> is assigned, hides all stage grids and shows the prompt UI.
         /// Also avoids <see cref="ImageGridPanel"/> random-fill on first enable of stage 90 after submit.
@@ -197,7 +226,6 @@ namespace Scenes.script
                 return;
 
             HideAllStageGridPanels();
-            ClearFinalResultTextureIfAny();
             initialPromptPanel.SetActive(true);
         }
 
@@ -215,22 +243,12 @@ namespace Scenes.script
                 panelStage1.gameObject.SetActive(false);
         }
 
-        void ClearFinalResultTextureIfAny()
-        {
-            if (finalResultRawImage != null && finalResultRawImage.texture != null)
-            {
-                Destroy(finalResultRawImage.texture);
-                finalResultRawImage.texture = null;
-            }
-        }
-
         /// <summary>
         /// Aborts in-flight search work, clears stage grids, and returns to the initial prompt when configured.
         /// </summary>
         public void ReturnToStart()
         {
             StopAllCoroutines();
-            TmpInputFieldXrPointerFocus.EndPhysicsRetentionIfAny();
 
             _busy = false;
             _query = string.Empty;
@@ -248,7 +266,6 @@ namespace Scenes.script
                 p.SetOnCloseToStart(null);
             }
 
-            ClearFinalResultTextureIfAny();
             HideAllStageGridPanels();
             ClearAllPanelStackDimming();
 
@@ -264,8 +281,8 @@ namespace Scenes.script
                 ResyncPromptPhysicsColliders();
                 StartCoroutine(ResyncPromptCollidersNextFrame());
             }
-
-            StartCoroutine(RefocusPromptNextFrame());
+            // queryInput's TmpInputFieldXrPointerFocus reapplies selection in LateUpdate while
+            // the field is active in the hierarchy, so no manual refocus call is needed here.
         }
 
         IEnumerable<ImageGridPanel> EnumerateStagePanels()
@@ -275,18 +292,6 @@ namespace Scenes.script
             yield return panelStage10;
             yield return panelStage3;
             yield return panelStage1;
-        }
-
-        IEnumerator RefocusPromptNextFrame()
-        {
-            yield return null;
-            if (queryInput == null || !queryInput.gameObject.activeInHierarchy)
-                yield break;
-            if (initialPromptPanel != null && !initialPromptPanel.activeSelf)
-                yield break;
-
-            queryInput.Select();
-            queryInput.ActivateInputField();
         }
 
         void ConfigurePanelSearchChrome(ImageGridPanel panel)
@@ -309,12 +314,6 @@ namespace Scenes.script
         IEnumerator StartFlowRoutine()
         {
             yield return null;
-            if (initialPromptPanel != null && initialPromptPanel.activeSelf && queryInput != null)
-            {
-                queryInput.Select();
-                queryInput.ActivateInputField();
-            }
-
             if (submitDebugQueryOnStart && initialPromptPanel == null && !string.IsNullOrWhiteSpace(debugQuery))
                 BeginSearch(debugQuery.Trim());
         }
@@ -565,12 +564,6 @@ namespace Scenes.script
 
             SetAllPanelsNonInteractive();
 
-            if (finalResultRawImage != null && finalResultRawImage.texture != null)
-            {
-                Destroy(finalResultRawImage.texture);
-                finalResultRawImage.texture = null;
-            }
-
             ClearAllPanelStackDimming();
         }
 
@@ -800,49 +793,6 @@ namespace Scenes.script
                 yield break;
             }
 
-            // Legacy fallback: use a standalone RawImage if provided.
-            if (finalResultRawImage != null)
-            {
-                if (panelStage90 != null)
-                    panelStage90.gameObject.SetActive(false);
-                if (panelStage30 != null)
-                    panelStage30.gameObject.SetActive(false);
-                if (panelStage10 != null)
-                    panelStage10.gameObject.SetActive(false);
-                if (panelStage3 != null)
-                    panelStage3.gameObject.SetActive(false);
-
-                if (finalResultRawImage.texture != null)
-                {
-                    Destroy(finalResultRawImage.texture);
-                    finalResultRawImage.texture = null;
-                }
-
-                Texture2D tex = null;
-                ImageGridPanel rootRef = panelStage90 != null ? panelStage90 : panelStage30 ?? panelStage10;
-                if (rootRef != null && rootRef.TryResolveDatasetFile(rec.path, out string localPath))
-                    tex = LoadTextureFromDisk(localPath);
-
-                if (tex == null && apiClient != null && !string.IsNullOrEmpty(rec.path))
-                {
-                    string url = apiClient.GetImageUrl(rec.path);
-                    using (UnityWebRequest req = UnityWebRequestTexture.GetTexture(url))
-                    {
-                        yield return req.SendWebRequest();
-#if UNITY_2020_1_OR_NEWER
-                        if (req.result == UnityWebRequest.Result.Success)
-#else
-                        if (!req.isNetworkError && !req.isHttpError)
-#endif
-                            tex = DownloadHandlerTexture.GetContent(req);
-                    }
-                }
-
-                if (tex != null)
-                    finalResultRawImage.texture = tex;
-                ClearAllPanelStackDimming();
-                yield break;
-            }
 
             // Last-ditch fallback: reuse panelStage3 to show the single result.
             if (panelStage90 != null)

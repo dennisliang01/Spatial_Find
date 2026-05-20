@@ -85,7 +85,7 @@ CACHE_META = _SERVER_DIR / "clip_cache_meta.json"
 
 EMBEDDING_DIM = 512
 
-STAGE_SIZES = [90, 30, 10, 3, 1]
+STAGE_SIZES = [90, 30, 9, 3, 1]
 CLIP_MODEL_NAME = "ViT-B/32"
 EMBED_BATCH_SIZE = 256
 
@@ -469,7 +469,7 @@ _POC_UI_HTML = """<!DOCTYPE html>
   </div>
 
   <script>
-    const STAGE_SIZES = [90, 30, 10, 3, 1];
+    const STAGE_SIZES = [90, 30, 9, 3, 1];
     const FINAL_STAGE = 5;
     let state = { query: "", stage: 0, candidates: [], results: [], selected: [] };
     let advancing = false;
