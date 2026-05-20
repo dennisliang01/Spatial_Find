@@ -945,7 +945,6 @@ GameObject:
   - component: {fileID: 539902416}
   - component: {fileID: 539902415}
   - component: {fileID: 539902414}
-  - component: {fileID: 539902413}
   - component: {fileID: 539902412}
   m_Layer: 0
   m_Name: RightHandController
@@ -998,20 +997,6 @@ MonoBehaviour:
   m_TrackingChanged:
     m_PersistentCalls:
       m_Calls: []
---- !u!114 &539902413
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 539902410}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9b00c4dc00dc09549a9fc024a0677bca, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  isLeftController: 0
-  clipSearchFlowController: {fileID: 0}
 --- !u!114 &539902414
 MonoBehaviour:
   m_ObjectHideFlags: 0

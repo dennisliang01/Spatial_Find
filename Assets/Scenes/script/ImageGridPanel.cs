@@ -861,23 +861,19 @@ namespace Scenes.script
                 // Add ImageTile component so PCInputController can retrieve the image ID on mouse click.
                 cellGO.AddComponent<ImageTile>();
 
-                // Photo child holds the texture and uses AspectRatioFitter (FitInParent) to letterbox
-                // / pillarbox the image inside the cell — no stretching, no cropping. The cell
-                // background shows through wherever the texture doesn't reach.
+                // Photo child stretches to fill the cell; the texture is distorted to match the
+                // cell's aspect rather than letterboxed.
                 GameObject photoGO = CreateUIElement("Photo", cellGO.transform);
                 StretchFill(photoGO.GetComponent<RectTransform>());
                 RawImage rawImg = photoGO.AddComponent<RawImage>();
                 rawImg.color = Color.white;
                 rawImg.raycastTarget = false;
-                AspectRatioFitter fitter = photoGO.AddComponent<AspectRatioFitter>();
-                fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-                fitter.aspectRatio = 1f;
 
                 _cells.Add(new CellSlot
                 {
                     Background = bgImg,
                     Raw = rawImg,
-                    Fitter = fitter,
+                    Fitter = null,
                     Btn = btn,
                     ImageId = null,
                     OwnedTexture = null,
@@ -981,16 +977,14 @@ namespace Scenes.script
         }
 
         /// <summary>
-        /// Assigns <paramref name="tex"/> to a cell's RawImage and updates its AspectRatioFitter so
-        /// the texture renders at its natural aspect, letterboxed/pillarboxed inside the cell.
+        /// Assigns <paramref name="tex"/> to a cell's RawImage. The image stretches to fill the
+        /// cell, distorting to match the cell's aspect.
         /// </summary>
         static void AssignCellTexture(CellSlot slot, Texture2D tex)
         {
             if (slot == null) return;
             if (slot.Raw != null)
                 slot.Raw.texture = tex;
-            if (slot.Fitter != null && tex != null && tex.width > 0 && tex.height > 0)
-                slot.Fitter.aspectRatio = (float)tex.width / tex.height;
         }
 
         static void WirePick(CellSlot slot, string id, Action<string> onCellPicked)
